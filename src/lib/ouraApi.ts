@@ -6,8 +6,18 @@ import type {
 import { getNextDay, toIsoDate } from "./utils"
 
 const CLIENT_ID = "c64fde91-0fa4-4a71-b8bb-35617aeb408e"
-
 const OURA_BASE = "https://api.ouraring.com/v2/usercollection"
+
+// Detect if we need CORS proxy (GitHub Pages, static hosting)
+const NEEDS_PROXY = location.hostname.includes("github.io") ||
+  location.hostname.includes("netlify") ||
+  location.hostname.includes("vercel")
+
+// CORS proxies - try in order
+const CORS_PROXIES = [
+  "https://corsproxy.io/?",
+  "https://api.allorigins.win/raw?url=",
+]
 
 function getRedirectUri(): string {
   const origin = window.location.origin
@@ -30,7 +40,6 @@ const OURA_SCOPES = [
 
 export function getOuraAuthUrl(): string {
   const redirect = encodeURIComponent(getRedirectUri())
-  // Use + for spaces (standard OAuth query param encoding)
   const scope = OURA_SCOPES.join("+")
   return `https://cloud.ouraring.com/oauth/authorize?client_id=${CLIENT_ID}&redirect_uri=${redirect}&response_type=token&scope=${scope}`
 }
@@ -85,41 +94,56 @@ function authHeaders(token: string) {
   }
 }
 
-// Free CORS proxies for GitHub Pages (try in order)
-const CORS_PROXIES = [
-  "https://api.allorigins.win/raw?url=",
-  "https://corsproxy.io/?",
-]
+// Fetch with automatic CORS proxy fallback
+async function fetchWithCorsProxy(url: string, headers: Record<string, string>): Promise<Response> {
+  // If we know we need a proxy (GitHub Pages), try proxy first
+  if (NEEDS_PROXY) {
+    for (const proxy of CORS_PROXIES) {
+      try {
+        const proxyUrl = proxy + encodeURIComponent(url)
+        const res = await fetch(proxyUrl, {
+          method: "GET",
+          headers,
+          credentials: "omit",
+        })
+        if (res.ok) return res
+      } catch (e) {
+        console.warn(`Proxy ${proxy} failed, trying next...`)
+      }
+    }
+  }
 
-async function tryFetch(url: string, headers: Record<string, string>, useProxy: boolean): Promise<Response> {
-  const targetUrl = useProxy ? CORS_PROXIES[0] + encodeURIComponent(url) : url
-  return fetch(targetUrl, {
-    method: "GET",
-    headers,
-    credentials: "omit",
-  })
+  // Try direct fetch (works on localhost, Netlify, etc.)
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers,
+      credentials: "omit",
+    })
+    if (res.ok) return res
+    return res
+  } catch (directErr) {
+    // Direct failed, try proxies as last resort
+    for (const proxy of CORS_PROXIES) {
+      try {
+        const proxyUrl = proxy + encodeURIComponent(url)
+        const res = await fetch(proxyUrl, {
+          method: "GET",
+          headers,
+          credentials: "omit",
+        })
+        if (res.ok) return res
+      } catch (e) {
+        // Try next proxy
+      }
+    }
+    throw directErr
+  }
 }
 
 async function fetchOura<T>(endpoint: string, token: string): Promise<T> {
   const url = `${OURA_BASE}${endpoint}`
-  let res: Response
-
-  try {
-    // Try direct API call first
-    res = await tryFetch(url, authHeaders(token), false)
-  } catch (directErr: any) {
-    // If direct fails (likely CORS), try CORS proxy
-    try {
-      res = await tryFetch(url, authHeaders(token), true)
-    } catch (proxyErr: any) {
-      const err: any = new Error(
-        "Unable to connect to Oura API. This may be due to network restrictions. " +
-        "Please try accessing from a different network or device."
-      )
-      err.code = "CORS_ERROR"
-      throw err
-    }
-  }
+  const res = await fetchWithCorsProxy(url, authHeaders(token))
 
   if (res.status === 401) {
     const err: any = new Error("TOKEN_EXPIRED")
@@ -141,49 +165,82 @@ function dateTimeRange(start: string, end: string) {
   return `?start_datetime=${start}T00:00:00&end_datetime=${end}T23:59:59`
 }
 
+// Safe fetch wrapper - returns empty data on failure instead of crashing
+async function safeFetch<T>(
+  name: string,
+  fn: () => Promise<T>,
+  defaultValue: T
+): Promise<T> {
+  try {
+    const result = await fn()
+    console.log(`[Memo] ${name}: loaded`)
+    return result
+  } catch (err: any) {
+    console.warn(`[Memo] ${name} failed:`, err.message || err)
+    return defaultValue
+  }
+}
+
 async function fetchSleep(token: string, start: string, end: string): Promise<SleepDayData[]> {
-  const data = await fetchOura<{ data: SleepDayData[] }>(`/daily_sleep${dateRange(start, end)}`, token)
-  return data.data || []
+  return safeFetch("sleep", async () => {
+    const data = await fetchOura<{ data: SleepDayData[] }>(`/daily_sleep${dateRange(start, end)}`, token)
+    return data.data || []
+  }, [])
 }
 
 async function fetchReadiness(token: string, start: string, end: string): Promise<ReadinessDayData[]> {
-  const data = await fetchOura<{ data: ReadinessDayData[] }>(`/daily_readiness${dateRange(start, end)}`, token)
-  return data.data || []
+  return safeFetch("readiness", async () => {
+    const data = await fetchOura<{ data: ReadinessDayData[] }>(`/daily_readiness${dateRange(start, end)}`, token)
+    return data.data || []
+  }, [])
 }
 
 async function fetchActivity(token: string, start: string, end: string): Promise<ActivityDayData[]> {
-  const data = await fetchOura<{ data: ActivityDayData[] }>(`/daily_activity${dateRange(start, end)}`, token)
-  return data.data || []
+  return safeFetch("activity", async () => {
+    const data = await fetchOura<{ data: ActivityDayData[] }>(`/daily_activity${dateRange(start, end)}`, token)
+    return data.data || []
+  }, [])
 }
 
 async function fetchHeartRate(token: string, start: string, end: string): Promise<HeartRateDataPoint[]> {
-  const data = await fetchOura<{ data: HeartRateDataPoint[] }>(`/heartrate${dateTimeRange(start, end)}`, token)
-  return data.data || []
+  return safeFetch("heartrate", async () => {
+    const data = await fetchOura<{ data: HeartRateDataPoint[] }>(`/heartrate${dateTimeRange(start, end)}`, token)
+    return data.data || []
+  }, [])
 }
 
 async function fetchWorkouts(token: string, start: string, end: string): Promise<WorkoutData[]> {
-  const data = await fetchOura<{ data: WorkoutData[] }>(`/workout${dateRange(start, end)}`, token)
-  return data.data || []
+  return safeFetch("workouts", async () => {
+    const data = await fetchOura<{ data: WorkoutData[] }>(`/workout${dateRange(start, end)}`, token)
+    return data.data || []
+  }, [])
 }
 
 async function fetchSpO2(token: string, start: string, end: string): Promise<SpO2DayData[]> {
-  const data = await fetchOura<{ data: SpO2DayData[] }>(`/daily_spo2${dateRange(start, end)}`, token)
-  return data.data || []
+  return safeFetch("spo2", async () => {
+    const data = await fetchOura<{ data: SpO2DayData[] }>(`/daily_spo2${dateRange(start, end)}`, token)
+    return data.data || []
+  }, [])
 }
 
 async function fetchStress(token: string, start: string, end: string): Promise<StressDayData[]> {
-  const data = await fetchOura<{ data: StressDayData[] }>(`/daily_stress${dateRange(start, end)}`, token)
-  return data.data || []
+  return safeFetch("stress", async () => {
+    const data = await fetchOura<{ data: StressDayData[] }>(`/daily_stress${dateRange(start, end)}`, token)
+    return data.data || []
+  }, [])
 }
 
 async function fetchResilience(token: string, start: string, end: string): Promise<ResilienceDayData[]> {
-  const data = await fetchOura<{ data: ResilienceDayData[] }>(`/daily_resilience${dateRange(start, end)}`, token)
-  return data.data || []
+  return safeFetch("resilience", async () => {
+    const data = await fetchOura<{ data: ResilienceDayData[] }>(`/daily_resilience${dateRange(start, end)}`, token)
+    return data.data || []
+  }, [])
 }
 
-export async function fetchPersonalInfo(token: string): Promise<PersonalInfo> {
-  const data = await fetchOura<PersonalInfo>("/personal_info", token)
-  return data
+export async function fetchPersonalInfo(token: string): Promise<PersonalInfo | null> {
+  return safeFetch("personal_info", async () => {
+    return await fetchOura<PersonalInfo>("/personal_info", token)
+  }, null)
 }
 
 function buildSleepMap(sleepData: SleepDayData[]): Map<string, SleepDayData> {
@@ -263,17 +320,17 @@ export async function fetchDailyMetrics(token: string, date: string): Promise<Da
   const start = date
   const end = date
 
-  const [sleepData, readinessData, activityData, hrData, workoutData, spo2Data, stressData, resilienceData] =
-    await Promise.all([
-      fetchSleep(token, start, end),
-      fetchReadiness(token, start, end),
-      fetchActivity(token, start, end),
-      fetchHeartRate(token, start, end),
-      fetchWorkouts(token, start, end),
-      fetchSpO2(token, start, end),
-      fetchStress(token, start, end),
-      fetchResilience(token, start, end),
-    ])
+  console.log(`[Memo] Fetching data for ${date}...`)
+
+  // Fetch all endpoints independently - failures don't crash others
+  const sleepData = await fetchSleep(token, start, end)
+  const readinessData = await fetchReadiness(token, start, end)
+  const activityData = await fetchActivity(token, start, end)
+  const hrData = await fetchHeartRate(token, start, end)
+  const workoutData = await fetchWorkouts(token, start, end)
+  const spo2Data = await fetchSpO2(token, start, end)
+  const stressData = await fetchStress(token, start, end)
+  const resilienceData = await fetchResilience(token, start, end)
 
   const sleepMap = buildSleepMap(sleepData)
   const readinessMap = buildReadinessMap(readinessData)
@@ -293,7 +350,7 @@ export async function fetchDailyMetrics(token: string, date: string): Promise<Da
   const stress = stressMap.get(date) || null
   const resilience = resilienceMap.get(date) || null
 
-  return {
+  const result: DailyMetrics = {
     date,
     sleep: sleep
       ? {
@@ -346,6 +403,18 @@ export async function fetchDailyMetrics(token: string, date: string): Promise<Da
       : null,
     workouts,
   }
+
+  console.log("[Memo] Metrics loaded:", {
+    sleep: result.sleep ? `${result.sleep.score}/100` : "none",
+    readiness: result.readiness ? `${result.readiness.score}/100` : "none",
+    activity: result.activity ? `${result.activity.steps} steps` : "none",
+    heartRate: result.heartRate ? `${result.heartRate.resting} bpm` : "none",
+    spo2: result.spo2 ? `${result.spo2.average}%` : "none",
+    stress: result.stress ? `${result.stress.stressHigh}%` : "none",
+    resilience: result.resilience ? `${result.resilience.score}` : "none",
+  })
+
+  return result
 }
 
 export async function fetchWeeklyData(token: string, endDate: string): Promise<DailyMetrics[]> {

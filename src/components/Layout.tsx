@@ -72,7 +72,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </AnimatePresence>
 
       {/* ====== Main Content — FULL WIDTH ====== */}
-      <main className="w-full">{children}</main>
+      {/* pt-0: Dashboard has its own pt-6 padding. Add top padding on other pages only. */}
+      <main className="w-full relative">{children}</main>
     </div>
   )
 }

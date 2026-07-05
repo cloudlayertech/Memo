@@ -88,21 +88,6 @@ export function clearStoredToken(): void {
   localStorage.removeItem(TOKEN_KEY)
 }
 
-const PRIMARY_PROXY = "https://corsproxy.io/?"
-const BACKUP_PROXY = "https://api.allorigins.win/raw?url="
-const REQUEST_TIMEOUT_MS = 8000
-
-// ── Robust URL builder ───────────────────────────────────────────────
-// Builds Oura API URLs with the access_token embedded as a query param.
-// This avoids needing the Authorization header, which CORS proxies often strip.
-function buildOuraUrl(endpoint: string, token: string): string {
-  // endpoint may already contain query params, e.g. "/daily_sleep?start_date=X"
-  const base = `${OURA_BASE}${endpoint}`
-  const url = new URL(base, "https://api.ouraring.com")
-  url.searchParams.set("access_token", token)
-  return url.toString()
-}
-
 // ── Request deduplication cache ──────────────────────────────────────
 // Module-level cache persists across imports during the session.
 const apiCache = new Map<string, { data: any; timestamp: number }>()
@@ -126,91 +111,54 @@ function setCached(key: string, data: any): void {
   apiCache.set(key, { data, timestamp: Date.now() })
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit, ms: number): Promise<Response> {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), ms)
-  try {
-    const res = await fetch(url, { ...init, signal: controller.signal })
-    return res
-  } finally {
-    clearTimeout(timeout)
+
+
+// ── Multi-proxy fetch ────────────────────────────────────────────────
+// Try multiple approaches: direct, proxy with header, proxy with token in URL.
+// The token is embedded as access_token query param (Oura supports this).
+// Authorization header is also sent as a fallback for proxies that preserve it.
+async function tryFetch(endpoint: string, token: string): Promise<{ ok: boolean; data?: any; error?: string }> {
+  const url = `${OURA_BASE}${endpoint}`
+
+  // Build proxy URLs with token in the query string (Oura supports this)
+  const separator = url.includes("?") ? "&" : "?"
+  const urlWithToken = `${url}${separator}access_token=${token}`
+
+  const proxies = [
+    "https://corsproxy.io/?",
+    "https://api.allorigins.win/raw?url=",
+    "https://api.codetabs.com/v1/proxy?quest=",
+  ]
+
+  // Try each proxy
+  for (const proxy of proxies) {
+    try {
+      const proxyUrl = proxy + encodeURIComponent(urlWithToken)
+      const res = await fetch(proxyUrl, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "omit",
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        return { ok: true, data }
+      }
+      if (res.status === 401) return { ok: false, error: "TOKEN_EXPIRED" }
+      if (res.status === 404) return { ok: true, data: { data: [] } }
+
+      console.warn(`[Memo] Proxy ${proxy}: HTTP ${res.status}`)
+    } catch (e: any) {
+      console.warn(`[Memo] Proxy ${proxy} failed: ${e.message}`)
+    }
   }
+
+  return { ok: false, error: "All proxies failed" }
 }
 
-async function tryFetch(proxyUrl: string, endpointName: string): Promise<{ ok: boolean; data?: any; error?: string }> {
-  // Token is embedded in the URL via buildOuraUrl — NO Authorization header needed.
-  // This is critical because CORS proxies (corsproxy.io, allorigins) strip
-  // the Authorization header. Passing access_token as a URL query param is
-  // officially supported by Oura and survives proxy forwarding.
-  const init: RequestInit = {
-    method: "GET",
-    credentials: "omit",
-  }
-
-  // Try primary proxy
-  try {
-    console.log(`[Memo] Fetching ${endpointName}...`)
-    const res = await fetchWithTimeout(proxyUrl, init, REQUEST_TIMEOUT_MS)
-    console.log(`[Memo] ${endpointName} status: ${res.status}`)
-    if (res.ok) {
-      const data = await res.json()
-      const itemCount = data.data?.length ?? 0
-      console.log(`[Memo] ${endpointName}: ${itemCount} items loaded`)
-      return { ok: true, data }
-    }
-    if (res.status === 401) {
-      console.warn(`[Memo] ${endpointName}: Token expired (401)`)
-      return { ok: false, error: "TOKEN_EXPIRED" }
-    }
-    if (res.status === 404) {
-      console.log(`[Memo] ${endpointName}: No data (404)`)
-      return { ok: true, data: { data: [] } }
-    }
-    console.warn(`[Memo] ${endpointName}: HTTP ${res.status}`)
-  } catch (err: any) {
-    console.warn(`[Memo] ${endpointName}: Primary proxy error - ${err.message || err}`)
-  }
-
-  // Try backup proxy
-  try {
-    // Extract the full Oura URL from the primary proxy URL
-    const ouraUrl = decodeURIComponent(proxyUrl.slice(PRIMARY_PROXY.length))
-    const backupUrl = BACKUP_PROXY + encodeURIComponent(ouraUrl)
-    console.log(`[Memo] ${endpointName}: Trying backup proxy...`)
-    const res = await fetchWithTimeout(backupUrl, init, REQUEST_TIMEOUT_MS)
-    console.log(`[Memo] ${endpointName} backup status: ${res.status}`)
-    if (res.ok) {
-      const data = await res.json()
-      return { ok: true, data }
-    }
-    if (res.status === 401) return { ok: false, error: "TOKEN_EXPIRED" }
-    if (res.status === 404) return { ok: true, data: { data: [] } }
-  } catch (err: any) {
-    console.warn(`[Memo] ${endpointName}: Backup proxy error - ${err.message || err}`)
-  }
-
-  console.error(`[Memo] ${endpointName}: All proxies failed`)
-  return { ok: false, error: "CORS proxy failed" }
-}
-
-// ── Retry wrapper ────────────────────────────────────────────────────
-// If an endpoint fails, wait 2 seconds and retry once.
-// This recovers from transient CORS proxy hiccups.
-async function safeFetchWithRetry<T>(
-  endpoint: string,
-  token: string,
-  extract: (data: any) => T,
-  fallback: T
-): Promise<{ data: T; status: string }> {
-  let result = await safeFetch(endpoint, token, extract, fallback)
-  if (result.status !== "loaded" && result.status !== "cached") {
-    console.log(`[Memo] Retrying ${endpoint} after 2s delay...`)
-    await new Promise((r) => setTimeout(r, 2000))
-    result = await safeFetch(endpoint, token, extract, fallback)
-  }
-  return result
-}
-
+// ── Safe fetch with cache ────────────────────────────────────────────
 async function safeFetch<T>(
   endpoint: string,
   token: string,
@@ -228,9 +176,7 @@ async function safeFetch<T>(
     }
   }
 
-  const ouraUrl = buildOuraUrl(endpoint, token)
-  const proxyUrl = PRIMARY_PROXY + encodeURIComponent(ouraUrl)
-  const result = await tryFetch(proxyUrl, endpoint.split("?")[0].replace(/^\//, ""))
+  const result = await tryFetch(endpoint, token)
   if (result.ok && result.data) {
     try {
       setCached(cacheKey, result.data)
@@ -266,29 +212,30 @@ function extractSleep(item: any) {
   return {
     day: item.day || "",
     score: item.score ?? 0,
-    totalDuration: 0, // v2 daily_sleep does not provide raw duration seconds
-    deepDuration: 0,
-    remDuration: 0,
-    lightDuration: 0,
-    latency: c.latency ?? 0, // latency SCORE 0-100 (not seconds)
-    efficiency: c.efficiency ?? 0, // efficiency SCORE 0-100
+    totalSleep: c.total_sleep ?? 0,   // contributor score 0-100
+    deepSleep: c.deep_sleep ?? 0,     // contributor score 0-100
+    remSleep: c.rem_sleep ?? 0,       // contributor score 0-100
+    latency: c.latency ?? 0,          // latency SCORE 0-100 (not seconds)
+    efficiency: c.efficiency ?? 0,    // efficiency SCORE 0-100
   }
 }
 
-// Readiness: Use top-level fields for actual values (resting_heart_rate in bpm,
-// temperature_deviation in degrees). hrv_balance from contributors is a SCORE 0-100.
+// Readiness: All extracted fields are contributor SCORES (0-100), NOT raw values.
+// resting_heart_rate and body_temperature come from contributors, not the top level.
+// Actual resting HR (in BPM) comes from the /heartrate endpoint, not readiness.
 function extractReadiness(item: any) {
+  const c = item.contributors || {}
   return {
     day: item.day || "",
     score: item.score ?? 0,
-    temperatureDeviation: item.temperature_deviation ?? 0,
-    restingHR: item.resting_heart_rate ?? 0,
-    hrvBalance: item.contributors?.hrv_balance ?? 0,
+    restingHeartRate: c.resting_heart_rate ?? 0,  // SCORE 0-100 (not BPM)
+    hrvBalance: c.hrv_balance ?? 0,                // SCORE 0-100
+    bodyTemperature: c.body_temperature ?? 0,      // SCORE 0-100
   }
 }
 
 // Activity: v2 daily_activity returns actual values (steps, calories, distance)
-// at the top level. high_intensity_minutes is not directly available.
+// at the top level. Field names must match Oura API exactly.
 function extractActivity(item: any) {
   return {
     day: item.day || "",
@@ -296,7 +243,7 @@ function extractActivity(item: any) {
     steps: item.steps ?? 0,
     activeCalories: item.active_calories ?? 0,
     totalCalories: item.total_calories ?? 0,
-    highIntensityMin: 0,
+    highIntensityMin: item.high_intensity_minutes ?? 0,
     distance: item.equivalent_walking_distance ?? 0,
   }
 }
@@ -378,28 +325,28 @@ export async function fetchDailyMetrics(
   const [
     sleepR, readinessR, activityR, hrR, workoutR, spo2R, stressR, resilienceR
   ] = await Promise.all([
-    safeFetchWithRetry(`/daily_sleep${dr(date, date)}`, token,
+    safeFetch(`/daily_sleep${dr(date, date)}`, token,
       (d) => ((d.data || []) as any[]).map(extractSleep), [])
       .then(r => { update("sleep", r.status); return r }),
-    safeFetchWithRetry(`/daily_readiness${dr(date, date)}`, token,
+    safeFetch(`/daily_readiness${dr(date, date)}`, token,
       (d) => ((d.data || []) as any[]).map(extractReadiness), [])
       .then(r => { update("readiness", r.status); return r }),
-    safeFetchWithRetry(`/daily_activity${dr(date, date)}`, token,
+    safeFetch(`/daily_activity${dr(date, date)}`, token,
       (d) => ((d.data || []) as any[]).map(extractActivity), [])
       .then(r => { update("activity", r.status); return r }),
-    safeFetchWithRetry(`/heartrate${dtr(date, date)}`, token,
+    safeFetch(`/heartrate${dtr(date, date)}`, token,
       (d) => (d.data || []) as any[], [])
       .then(r => { update("heartRate", r.status); return r }),
-    safeFetchWithRetry(`/workout${dr(date, date)}`, token,
+    safeFetch(`/workout${dr(date, date)}`, token,
       (d) => ((d.data || []) as any[]).map(extractWorkout), [])
       .then(r => { update("workout", r.status); return r }),
-    safeFetchWithRetry(`/daily_spo2${dr(date, date)}`, token,
+    safeFetch(`/daily_spo2${dr(date, date)}`, token,
       (d) => ((d.data || []) as any[]).map(extractSpO2), [])
       .then(r => { update("spo2", r.status); return r }),
-    safeFetchWithRetry(`/daily_stress${dr(date, date)}`, token,
+    safeFetch(`/daily_stress${dr(date, date)}`, token,
       (d) => ((d.data || []) as any[]).map(extractStress), [])
       .then(r => { update("stress", r.status); return r }),
-    safeFetchWithRetry(`/daily_resilience${dr(date, date)}`, token,
+    safeFetch(`/daily_resilience${dr(date, date)}`, token,
       (d) => ((d.data || []) as any[]).map(extractResilience), [])
       .then(r => { update("resilience", r.status); return r }),
   ])
@@ -461,18 +408,17 @@ export async function fetchDailyMetrics(
     date,
     sleep: sleepData ? {
       score: sleepData.score,
-      totalDuration: sleepData.totalDuration,
-      deepDuration: sleepData.deepDuration,
-      remDuration: sleepData.remDuration,
-      lightDuration: sleepData.lightDuration,
+      totalSleep: sleepData.totalSleep,
+      deepSleep: sleepData.deepSleep,
+      remSleep: sleepData.remSleep,
       latency: sleepData.latency,
       efficiency: sleepData.efficiency,
     } : null,
     readiness: readinessData ? {
       score: readinessData.score,
-      temperatureDeviation: readinessData.temperatureDeviation,
-      restingHR: readinessData.restingHR,
+      restingHeartRate: readinessData.restingHeartRate,
       hrvBalance: readinessData.hrvBalance,
+      bodyTemperature: readinessData.bodyTemperature,
     } : null,
     activity: activityData ? {
       score: activityData.score,
@@ -534,7 +480,7 @@ export async function fetchDailyMetricsCached(
 }
 
 export async function fetchPersonalInfo(token: string): Promise<PersonalInfo | null> {
-  const result = await safeFetchWithRetry("/personal_info", token,
+  const result = await safeFetch("/personal_info", token,
     (d) => d as PersonalInfo, null)
   return result.data
 }
@@ -565,7 +511,12 @@ export async function fetchMonthlyData(token: string, endDate: string): Promise<
   return results
 }
 
-// ── Endpoint tester (call from browser console for debugging) ────────
+// ── Single endpoint tester ───────────────────────────────────────────
+export async function testEndpoint(token: string, endpoint: string): Promise<any> {
+  return await tryFetch(endpoint, token)
+}
+
+// ── Full endpoint tester (call from browser console for debugging) ───
 export async function testOuraEndpoints(token: string): Promise<Record<string, any>> {
   const endpoints = [
     { name: "daily_sleep", url: `/daily_sleep?start_date=2025-07-04&end_date=2025-07-05` },
@@ -581,26 +532,16 @@ export async function testOuraEndpoints(token: string): Promise<Record<string, a
 
   const results: Record<string, any> = {}
   for (const ep of endpoints) {
-    try {
-      const ouraUrl = buildOuraUrl(ep.url, token)
-      const proxyUrl = PRIMARY_PROXY + encodeURIComponent(ouraUrl)
-      const res = await fetchWithTimeout(proxyUrl, {
-        method: "GET",
-        credentials: "omit",
-      }, 15000)
-      if (res.ok) {
-        const data = await res.json()
-        results[ep.name] = {
-          status: "ok",
-          itemCount: data.data?.length ?? 0,
-          firstItem: data.data?.[0] ?? null,
-          raw: data,
-        }
-      } else {
-        results[ep.name] = { status: "error", code: res.status, text: res.statusText }
+    const result = await tryFetch(ep.url, token)
+    if (result.ok && result.data) {
+      results[ep.name] = {
+        status: "ok",
+        itemCount: result.data.data?.length ?? 0,
+        firstItem: result.data.data?.[0] ?? null,
+        raw: result.data,
       }
-    } catch (e: any) {
-      results[ep.name] = { status: "exception", message: e.message }
+    } else {
+      results[ep.name] = { status: "error", error: result.error || "failed" }
     }
   }
   return results

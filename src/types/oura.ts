@@ -75,19 +75,18 @@ export interface PersonalInfo {
 
 export interface SleepMetrics {
   score: number;
-  totalDuration: number;
-  deepDuration: number;
-  remDuration: number;
-  lightDuration: number;
-  latency: number;
-  efficiency: number;
+  totalSleep: number;        // contributor score 0-100
+  deepSleep: number;         // contributor score 0-100
+  remSleep: number;          // contributor score 0-100
+  latency: number;           // contributor score 0-100
+  efficiency: number;        // contributor score 0-100
 }
 
 export interface ReadinessMetrics {
   score: number;
-  temperatureDeviation: number;
-  restingHR: number;
-  hrvBalance: number;
+  restingHeartRate: number;  // contributor score 0-100 (not actual BPM)
+  hrvBalance: number;        // contributor score 0-100
+  bodyTemperature: number;   // contributor score 0-100
 }
 
 export interface ActivityMetrics {

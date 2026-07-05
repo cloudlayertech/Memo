@@ -1,21 +1,65 @@
 import { motion } from "framer-motion"
-import { Sun, CloudSun, Moon } from "lucide-react"
+import {
+  Sun,
+  CloudSun,
+  Moon,
+  Heart,
+  Activity,
+  Brain,
+  Droplets,
+  Footprints,
+  AlertTriangle,
+  Wind,
+  ShieldAlert,
+  Sparkles,
+  Music,
+  Clock,
+  Zap,
+  Coffee,
+  MoonStar,
+} from "lucide-react"
 import type { DailyMetrics } from "@/types/oura"
-import { getRecommendationsForData } from "@/lib/recommendations"
 
 interface DailyPlanProps {
   metrics: DailyMetrics | null;
 }
 
-interface PlanSection {
+/* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
+
+interface PlanItem {
+  text: string;
+  icon: React.ElementType;
+  severity: "info" | "warning" | "critical" | "positive";
+}
+
+interface PlanColumn {
   timeLabel: string;
   icon: React.ElementType;
   iconColor: string;
   bgColor: string;
-  tasks: string[];
+  borderColor: string;
+  items: PlanItem[];
 }
 
-function buildPlan(metrics: DailyMetrics | null): PlanSection[] {
+/* ------------------------------------------------------------------ */
+/*  Severity helpers                                                   */
+/* ------------------------------------------------------------------ */
+
+const severityDot: Record<PlanItem["severity"], string> = {
+  positive: "#22c55e",
+  info: "#6B9BC4",
+  warning: "#E8A838",
+  critical: "#EF4444",
+}
+
+/* ------------------------------------------------------------------ */
+/*  Plan builder -- every recommendation comes from ACTUAL Oura data   */
+/* ------------------------------------------------------------------ */
+
+function buildPlan(metrics: DailyMetrics | null): PlanColumn[] {
+  /* -------- Fallback: no data at all -------- */
   if (!metrics) {
     return [
       {
@@ -23,10 +67,11 @@ function buildPlan(metrics: DailyMetrics | null): PlanSection[] {
         icon: Sun,
         iconColor: "#C4A46B",
         bgColor: "bg-amber-50",
-        tasks: [
-          "Help with morning routine: gentle wake-up, check how they slept",
-          "Offer water and a healthy breakfast",
-          "Review any appointments or activities for the day",
+        borderColor: "border-amber-100",
+        items: [
+          { text: "Check in gently about how they feel this morning", icon: Coffee, severity: "info" },
+          { text: "Offer water and a healthy breakfast", icon: Droplets, severity: "info" },
+          { text: "Review the day's schedule together", icon: Clock, severity: "info" },
         ],
       },
       {
@@ -34,10 +79,11 @@ function buildPlan(metrics: DailyMetrics | null): PlanSection[] {
         icon: CloudSun,
         iconColor: "#6B9BC4",
         bgColor: "bg-sky-50",
-        tasks: [
-          "Encourage a short walk or light movement",
-          "Engage in a calming activity: music, puzzles, or conversation",
-          "Offer a healthy snack and water",
+        borderColor: "border-sky-100",
+        items: [
+          { text: "Encourage a short walk or light movement", icon: Footprints, severity: "info" },
+          { text: "Engage in a calming activity: music, puzzles, or conversation", icon: Music, severity: "info" },
+          { text: "Offer a healthy snack and water", icon: Droplets, severity: "info" },
         ],
       },
       {
@@ -45,161 +91,419 @@ function buildPlan(metrics: DailyMetrics | null): PlanSection[] {
         icon: Moon,
         iconColor: "#9B8BB5",
         bgColor: "bg-purple-50",
-        tasks: [
-          "Begin winding down with calming activities",
-          "Avoid screens and stimulating activities",
-          "Ensure a comfortable, quiet sleep environment",
+        borderColor: "border-purple-100",
+        items: [
+          { text: "Begin winding down with calming activities", icon: MoonStar, severity: "info" },
+          { text: "Avoid screens and stimulating activities", icon: ShieldAlert, severity: "warning" },
+          { text: "Ensure a comfortable, quiet sleep environment", icon: Sparkles, severity: "info" },
         ],
       },
     ]
   }
 
-  const allRecs = getRecommendationsForData(metrics)
-
-  // Derive morning tasks from sleep data
-  const morningTasks: string[] = []
+  /* ---------- Extract relevant metrics ---------- */
   const sleepScore = metrics.sleep?.score
-  const sleepEfficiency = metrics.sleep?.efficiency
-  const sleepDuration = metrics.sleep?.totalDuration
+  const sleepLatency = metrics.sleep?.latency        // contributor score 0-100
+  const deepSleep = metrics.sleep?.deepSleep          // contributor score 0-100
+  const remSleep = metrics.sleep?.remSleep            // contributor score 0-100
 
-  if (sleepScore != null && sleepScore < 70) {
-    morningTasks.push("They slept poorly — be patient, allow extra rest time")
-    morningTasks.push("Offer a calming morning routine without rushing")
-  } else if (sleepScore != null && sleepScore >= 80) {
-    morningTasks.push("They slept well — a great day for activities!")
-  } else {
-    morningTasks.push("Check in gently about how they feel this morning")
-  }
-
-  if (sleepEfficiency != null && sleepEfficiency < 85) {
-    morningTasks.push("Sleep was fragmented — watch for fatigue or irritability")
-  }
-
-  if (sleepDuration != null && sleepDuration < 21600) {
-    morningTasks.push("Short sleep night — allow for a restful break or nap today")
-  }
-
-  if (metrics.readiness?.temperatureDeviation && Math.abs(metrics.readiness.temperatureDeviation) > 0.5) {
-    morningTasks.push("Body temperature varied — check if they feel unwell")
-  }
-
-  // Fill with defaults if we don't have enough
-  while (morningTasks.length < 2) {
-    morningTasks.push("Offer water and a nutritious breakfast")
-    if (morningTasks.length < 2) morningTasks.push("Review the day's schedule together")
-  }
-
-  // Derive afternoon tasks from activity and stress data
-  const afternoonTasks: string[] = []
-  const steps = metrics.activity?.steps
-  const stressHigh = metrics.stress?.stressHigh
   const readinessScore = metrics.readiness?.score
-
-  if (steps != null && steps < 3000) {
-    afternoonTasks.push("Encourage a gentle 15-minute walk outside")
-  } else if (steps != null && steps >= 7000) {
-    afternoonTasks.push("Great activity level — keep the momentum going!")
-  } else {
-    afternoonTasks.push("Suggest light movement or stretching")
-  }
-
-  if (stressHigh != null && stressHigh > 60) {
-    afternoonTasks.push("Stress levels were high — try calming music or breathing exercises")
-  } else if (stressHigh != null && stressHigh < 30) {
-    afternoonTasks.push("Low stress day — good time for social engagement")
-  }
-
-  if (readinessScore != null && readinessScore < 60) {
-    afternoonTasks.push("Low readiness score — keep activities light and restorative")
-  }
-
-  // Fill with defaults
-  while (afternoonTasks.length < 2) {
-    afternoonTasks.push("Engage in a meaningful activity: music, conversation, or a hobby")
-    if (afternoonTasks.length < 2) afternoonTasks.push("Offer a healthy snack and water")
-  }
-
-  // Derive evening tasks from readiness and heart rate data
-  const eveningTasks: string[] = []
   const restingHR = metrics.heartRate?.resting
   const hrvBalance = metrics.readiness?.hrvBalance
-  const sleepScoreForEvening = metrics.sleep?.score
 
+  const steps = metrics.activity?.steps
+  const activityScore = metrics.activity?.score
+
+  const spo2Avg = metrics.spo2?.average
+  const breathingDisturbance = metrics.spo2?.breathingDisturbanceIndex
+
+  const stressSummary = metrics.stress?.daySummary
+  const stressRecovery = metrics.stress?.recoveryHigh
+
+  const resilienceScore = metrics.resilience?.score
+
+  /* ---------- MORNING ---------- */
+  const morningItems: PlanItem[] = []
+
+  /* Sleep score >= 80 -- good sleep */
+  if (sleepScore != null && sleepScore >= 80) {
+    morningItems.push({
+      text: "They slept well last night — expect a calmer, more focused day",
+      icon: Sparkles,
+      severity: "positive",
+    })
+    morningItems.push({
+      text: "Good day for cognitive activities like puzzles or reading",
+      icon: Brain,
+      severity: "positive",
+    })
+  }
+
+  /* Sleep score < 65 -- poor sleep */
+  if (sleepScore != null && sleepScore < 65) {
+    morningItems.push({
+      text: "Poor sleep detected — keep the morning calm and predictable",
+      icon: ShieldAlert,
+      severity: "warning",
+    })
+    morningItems.push({
+      text: "Watch for increased confusion or irritability today",
+      icon: AlertTriangle,
+      severity: "warning",
+    })
+    if (morningItems.length < 3) {
+      morningItems.push({
+        text: "Avoid new environments or unfamiliar people",
+        icon: ShieldAlert,
+        severity: "warning",
+      })
+    }
+  }
+
+  /* Sleep between 65-79 -- moderate */
+  if (sleepScore != null && sleepScore >= 65 && sleepScore < 80) {
+    morningItems.push({
+      text: "Moderate sleep — take it slow this morning",
+      icon: Coffee,
+      severity: "info",
+    })
+  }
+
+  /* Low deep sleep contributor score */
+  if (deepSleep != null && deepSleep < 45 && (sleepScore == null || sleepScore >= 65)) {
+    morningItems.push({
+      text: "Deep sleep was low — they may feel groggy; ease into the day",
+      icon: Moon,
+      severity: "info",
+    })
+  }
+
+  /* Low REM sleep contributor score */
+  if (remSleep != null && remSleep < 50 && (sleepScore == null || sleepScore >= 65)) {
+    morningItems.push({
+      text: "REM sleep was reduced — expect more emotional sensitivity",
+      icon: Heart,
+      severity: "info",
+    })
+  }
+
+  /* Elevated resting HR */
   if (restingHR != null && restingHR > 80) {
-    eveningTasks.push("Resting heart rate is elevated — prioritize a calm, early evening")
-  } else if (restingHR != null && restingHR <= 70) {
-    eveningTasks.push("Heart rate looks healthy — maintain the calming routine")
+    morningItems.push({
+      text: "Resting heart rate is elevated — check for discomfort or anxiety",
+      icon: Heart,
+      severity: "warning",
+    })
+    if (morningItems.length < 3) {
+      morningItems.push({
+        text: "Keep activities gentle today",
+        icon: Activity,
+        severity: "warning",
+      })
+    }
   }
 
+  /* Very elevated resting HR > 90 */
+  if (restingHR != null && restingHR > 90) {
+    morningItems.push({
+      text: "Resting HR is very high — check for fever, pain, or dehydration",
+      icon: ShieldAlert,
+      severity: "critical",
+    })
+  }
+
+  /* Low readiness */
+  if (readinessScore != null && readinessScore < 60) {
+    morningItems.push({
+      text: "Recovery score is low — they may tire easily today",
+      icon: Zap,
+      severity: "warning",
+    })
+    if (morningItems.length < 3) {
+      morningItems.push({
+        text: "Plan for rest periods between activities",
+        icon: Clock,
+        severity: "info",
+      })
+    }
+  }
+
+  /* Good readiness + good heart */
+  if (
+    readinessScore != null && readinessScore >= 70 &&
+    restingHR != null && restingHR <= 70 &&
+    morningItems.length === 0
+  ) {
+    morningItems.push({
+      text: "Great recovery overnight — they are ready for the day",
+      icon: Sparkles,
+      severity: "positive",
+    })
+  }
+
+  /* SpO2 critical */
+  if (spo2Avg != null && spo2Avg < 92) {
+    morningItems.push({
+      text: "⚠️ Blood oxygen critically low — consider contacting their doctor",
+      icon: ShieldAlert,
+      severity: "critical",
+    })
+  } else if (spo2Avg != null && spo2Avg < 95) {
+    morningItems.push({
+      text: "⚠️ Blood oxygen below 95% — monitor breathing and energy closely",
+      icon: AlertTriangle,
+      severity: "warning",
+    })
+  }
+
+  /* Breathing disturbances */
+  if (breathingDisturbance != null && breathingDisturbance > 15) {
+    morningItems.push({
+      text: "Frequent breathing disturbances overnight — discuss with their physician",
+      icon: Wind,
+      severity: "warning",
+    })
+  }
+
+  /* Fill with data-informed generics if needed */
+  if (morningItems.length < 2) {
+    if (sleepScore == null) {
+      morningItems.push({ text: "Check in gently about how they feel this morning", icon: Coffee, severity: "info" })
+    }
+    if (morningItems.length < 2) {
+      morningItems.push({ text: "Offer water and a nutritious breakfast", icon: Droplets, severity: "info" })
+    }
+  }
+
+  /* ---------- AFTERNOON ---------- */
+  const afternoonItems: PlanItem[] = []
+
+  /* Low steps yesterday */
+  if (steps != null && steps < 3000) {
+    afternoonItems.push({
+      text: "Low movement yesterday — encourage gentle activity today",
+      icon: Footprints,
+      severity: "warning",
+    })
+    afternoonItems.push({
+      text: "Even 10 minutes of walking helps circulation and mood",
+      icon: Activity,
+      severity: "info",
+    })
+  }
+
+  /* Good steps */
+  if (steps != null && steps >= 5000 && activityScore != null && activityScore >= 70) {
+    afternoonItems.push({
+      text: "Great activity level — keep the momentum going!",
+      icon: Sparkles,
+      severity: "positive",
+    })
+  }
+
+  /* High stress */
+  if (stressSummary != null && stressSummary > 60) {
+    afternoonItems.push({
+      text: "High overnight stress — create a calm, quiet environment",
+      icon: ShieldAlert,
+      severity: "warning",
+    })
+    afternoonItems.push({
+      text: "Consider calming music or a gentle walk",
+      icon: Music,
+      severity: "info",
+    })
+  }
+
+  /* Extreme stress */
+  if (stressSummary != null && stressSummary > 85) {
+    afternoonItems.push({
+      text: "Severe stress detected — rule out pain, infection, or medication issues",
+      icon: ShieldAlert,
+      severity: "critical",
+    })
+  }
+
+  /* Low stress recovery */
+  if (stressRecovery != null && stressRecovery < 60 * 60 && (stressSummary == null || stressSummary <= 60)) {
+    afternoonItems.push({
+      text: "Limited recovery time overnight — build in rest periods today",
+      icon: Clock,
+      severity: "info",
+    })
+  }
+
+  /* Good stress state */
+  if (
+    stressSummary != null && stressSummary < 50 &&
+    stressRecovery != null && stressRecovery >= 2 * 3600 &&
+    afternoonItems.length === 0
+  ) {
+    afternoonItems.push({
+      text: "Low stress, good recovery — a great afternoon for social visits",
+      icon: Sparkles,
+      severity: "positive",
+    })
+  }
+
+  /* Low readiness carries into afternoon */
+  if (readinessScore != null && readinessScore < 60 && afternoonItems.length < 2) {
+    afternoonItems.push({
+      text: "Recovery is low — keep activities light and restorative",
+      icon: Zap,
+      severity: "warning",
+    })
+  }
+
+  /* Resilience context */
+  if (resilienceScore != null && resilienceScore < 50 && afternoonItems.length < 3) {
+    afternoonItems.push({
+      text: "Resilience is low — avoid overwhelming situations",
+      icon: ShieldAlert,
+      severity: "warning",
+    })
+  }
+
+  /* Fill if needed */
+  if (afternoonItems.length < 2) {
+    if (steps == null) {
+      afternoonItems.push({ text: "Encourage light movement or stretching", icon: Footprints, severity: "info" })
+    }
+    if (afternoonItems.length < 2) {
+      afternoonItems.push({ text: "Engage in a calming activity: music, puzzles, or conversation", icon: Music, severity: "info" })
+    }
+  }
+
+  /* ---------- EVENING ---------- */
+  const eveningItems: PlanItem[] = []
+
+  /* Elevated resting HR */
+  if (restingHR != null && restingHR > 80) {
+    eveningItems.push({
+      text: "Resting heart rate is elevated — prioritize a calm, early evening",
+      icon: Heart,
+      severity: "warning",
+    })
+  }
+
+  /* Healthy heart */
+  if (restingHR != null && restingHR <= 70 && eveningItems.length === 0) {
+    eveningItems.push({
+      text: "Heart rate looks healthy — maintain the calming routine",
+      icon: Heart,
+      severity: "positive",
+    })
+  }
+
+  /* Low HRV */
   if (hrvBalance != null && hrvBalance < 60) {
-    eveningTasks.push("Low HRV suggests they need extra rest — keep the evening quiet")
+    eveningItems.push({
+      text: "Low HRV — their nervous system needs extra rest tonight",
+      icon: Wind,
+      severity: "warning",
+    })
+    eveningItems.push({
+      text: "Try guided breathing together: slow inhales and exhales for 5 minutes",
+      icon: Activity,
+      severity: "info",
+    })
   }
 
-  if (sleepScoreForEvening != null && sleepScoreForEvening < 70) {
-    eveningTasks.push("Last night's sleep was poor — aim for an earlier bedtime tonight")
-    eveningTasks.push("Start wind-down routine 1 hour before bed")
-  } else {
-    eveningTasks.push("Begin winding down 30 minutes before bedtime")
+  /* Poor sleep last night = early wind-down */
+  if (sleepScore != null && sleepScore < 65) {
+    eveningItems.push({
+      text: "Last night's sleep was poor — aim for an earlier bedtime tonight",
+      icon: Moon,
+      severity: "warning",
+    })
+    eveningItems.push({
+      text: "Start wind-down routine 1 hour before bed",
+      icon: Clock,
+      severity: "info",
+    })
+  } else if (sleepScore != null && sleepScore < 75) {
+    eveningItems.push({
+      text: "Start wind-down routine a bit earlier tonight",
+      icon: MoonStar,
+      severity: "info",
+    })
   }
 
-  eveningTasks.push("Ensure the bedroom is cool, dark, and quiet")
-
-  // Fill with defaults
-  while (eveningTasks.length < 2) {
-    eveningTasks.push("Avoid screens and stimulating activities in the evening")
-    if (eveningTasks.length < 2) eveningTasks.push("Offer a warm, caffeine-free drink before bed")
+  /* Sleep latency contributor score low = took long to fall asleep */
+  if (sleepLatency != null && sleepLatency < 40 && (sleepScore == null || sleepScore >= 65)) {
+    eveningItems.push({
+      text: "They took a while to fall asleep — dim lights 1–2 hours before bed",
+      icon: MoonStar,
+      severity: "info",
+    })
   }
 
-  // Also pull specific recommendation actions
-  const sleepRecs = allRecs.filter((r) => r.category === "morning" || r.category === "evening").slice(0, 2)
-  const exerciseRecs = allRecs.filter((r) => r.category === "activity").slice(0, 2)
-  const heartRecs = allRecs.filter((r) => r.category === "heart" || r.category === "stress").slice(0, 2)
+  /* Low deep sleep contributor score = warm bath suggestion */
+  if (deepSleep != null && deepSleep < 50 && eveningItems.length < 3) {
+    eveningItems.push({
+      text: "A warm bath 90 minutes before bed may help deepen sleep tonight",
+      icon: Droplets,
+      severity: "info",
+    })
+  }
 
-  // Merge recommendation actions into sections
-  sleepRecs.forEach((r) => {
-    if (r.actions[0] && !morningTasks.includes(r.actions[0])) {
-      morningTasks.push(r.actions[0])
-    }
-  })
-  exerciseRecs.forEach((r) => {
-    if (r.actions[0] && !afternoonTasks.includes(r.actions[0])) {
-      afternoonTasks.push(r.actions[0])
-    }
-  })
-  heartRecs.forEach((r) => {
-    if (r.actions[0] && !eveningTasks.includes(r.actions[0])) {
-      eveningTasks.push(r.actions[0])
-    }
-  })
+  /* Sundowning risk */
+  if (
+    (sleepScore != null && sleepScore < 65) ||
+    (stressSummary != null && stressSummary > 65)
+  ) {
+    eveningItems.push({
+      text: "Watch for sundowning signs — turn on lights before dusk",
+      icon: AlertTriangle,
+      severity: "warning",
+    })
+  }
 
-  // Limit to 3 tasks each
+  /* Fill if needed */
+  if (eveningItems.length < 2) {
+    eveningItems.push({ text: "Begin winding down 30 minutes before bedtime", icon: MoonStar, severity: "info" })
+  }
+  if (eveningItems.length < 2) {
+    eveningItems.push({ text: "Ensure the bedroom is cool, dark, and quiet", icon: Sparkles, severity: "info" })
+  }
+
+  /* ---------- Limit to 3 per column ---------- */
   return [
     {
       timeLabel: "Morning",
       icon: Sun,
       iconColor: "#C4A46B",
       bgColor: "bg-amber-50",
-      tasks: morningTasks.slice(0, 3),
+      borderColor: "border-amber-100",
+      items: morningItems.slice(0, 3),
     },
     {
       timeLabel: "Afternoon",
       icon: CloudSun,
       iconColor: "#6B9BC4",
       bgColor: "bg-sky-50",
-      tasks: afternoonTasks.slice(0, 3),
+      borderColor: "border-sky-100",
+      items: afternoonItems.slice(0, 3),
     },
     {
       timeLabel: "Evening",
       icon: Moon,
       iconColor: "#9B8BB5",
       bgColor: "bg-purple-50",
-      tasks: eveningTasks.slice(0, 3),
+      borderColor: "border-purple-100",
+      items: eveningItems.slice(0, 3),
     },
   ]
 }
 
+/* ------------------------------------------------------------------ */
+/*  Component                                                          */
+/* ------------------------------------------------------------------ */
+
 export default function DailyPlan({ metrics }: DailyPlanProps) {
-  const sections = buildPlan(metrics)
+  const columns = buildPlan(metrics)
+
+  const hasData = metrics != null
 
   return (
     <motion.div
@@ -208,33 +512,89 @@ export default function DailyPlan({ metrics }: DailyPlanProps) {
       transition={{ duration: 0.4, delay: 0.12 }}
       className="bg-white rounded-2xl shadow-card p-5 md:p-6"
     >
-      <h2 className="text-xl font-semibold text-memo-text mb-4">Today&apos;s Care Plan</h2>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-5">
+        <h2 className="text-xl font-semibold text-memo-text">Today&apos;s Care Plan</h2>
+        {hasData && (
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full">
+            <Sparkles className="w-3.5 h-3.5" />
+            Based on overnight Oura data
+          </span>
+        )}
+        {!hasData && (
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-50 px-2.5 py-1 rounded-full">
+            <Clock className="w-3.5 h-3.5" />
+            General guidance
+          </span>
+        )}
+      </div>
+
+      {/* Three columns */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        {sections.map((section) => {
-          const Icon = section.icon
+        {columns.map((col, colIdx) => {
+          const Icon = col.icon
           return (
-            <div key={section.timeLabel} className="space-y-3">
+            <motion.div
+              key={col.timeLabel}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, delay: 0.18 + colIdx * 0.08 }}
+              className={`rounded-xl border ${col.borderColor} ${col.bgColor} p-4 space-y-3`}
+            >
+              {/* Column header */}
               <div className="flex items-center gap-2.5">
-                <div className={`w-10 h-10 rounded-xl ${section.bgColor} flex items-center justify-center`}>
-                  <Icon className="w-5 h-5" style={{ color: section.iconColor }} />
+                <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shadow-sm">
+                  <Icon className="w-5 h-5" style={{ color: col.iconColor }} />
                 </div>
-                <h3 className="text-lg font-semibold text-memo-text">{section.timeLabel}</h3>
+                <h3 className="text-base font-semibold text-memo-text">{col.timeLabel}</h3>
               </div>
-              <ul className="space-y-2 pl-1">
-                {section.tasks.map((task, i) => (
-                  <li key={i} className="flex items-start gap-3 text-base text-memo-text-secondary leading-relaxed">
-                    <span
-                      className="w-2 h-2 rounded-full mt-2 flex-shrink-0"
-                      style={{ backgroundColor: section.iconColor }}
-                    />
-                    <span>{task}</span>
-                  </li>
-                ))}
+
+              {/* Items */}
+              <ul className="space-y-3">
+                {col.items.map((item, i) => {
+                  const ItemIcon = item.icon
+                  return (
+                    <motion.li
+                      key={i}
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.25, delay: 0.3 + colIdx * 0.08 + i * 0.06 }}
+                      className="flex items-start gap-3"
+                    >
+                      <div
+                        className="w-2 h-2 rounded-full mt-2 flex-shrink-0"
+                        style={{ backgroundColor: severityDot[item.severity] }}
+                      />
+                      <div className="flex items-start gap-2">
+                        <ItemIcon
+                          className="w-4 h-4 mt-0.5 flex-shrink-0 opacity-60"
+                          style={{ color: severityDot[item.severity] }}
+                        />
+                        <span className="text-sm text-memo-text-secondary leading-relaxed">
+                          {item.text}
+                        </span>
+                      </div>
+                    </motion.li>
+                  )
+                })}
               </ul>
-            </div>
+            </motion.div>
           )
         })}
       </div>
+
+      {/* Footer note */}
+      {hasData && (
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.6 }}
+          className="mt-4 text-xs text-memo-text-secondary/70 text-center"
+        >
+          Recommendations are generated from real Oura Ring biometric data.
+          Always consult a healthcare professional for medical concerns.
+        </motion.p>
+      )}
     </motion.div>
   )
 }

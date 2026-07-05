@@ -20,6 +20,8 @@ interface DataContextType {
   selectedDate: string
   isAuthenticated: boolean
   initializing: boolean
+  initialLoadDone: boolean
+  showConnect: boolean
   connect: () => void
   disconnect: () => void
   selectDate: (date: string) => void
@@ -42,8 +44,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null)
   const [endpointStatus, setEndpointStatus] = useState<EndpointStatus | null>(null)
   const [selectedDate, setSelectedDate] = useState(todayStr())
-  const [initializing, setInitializing] = useState(true)
+  const [initialLoadDone, setInitialLoadDone] = useState(false)
+  const [showConnect, setShowConnect] = useState(false)
   const isAuthenticated = !!token
+  // initializing is kept for backward compat but always false — content shows immediately
+  const initializing = false
 
   // Use a ref to track personalInfo without creating a useCallback
   // dependency cycle. loadData sets personalInfo, which would otherwise
@@ -53,17 +58,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const loadData = useCallback(
     async (accessToken: string, date: string) => {
+      // Don't block if we already have data for this date
+      if (metrics?.date === date && metrics?.sleep !== undefined) {
+        setInitialLoadDone(true)
+        return // Already have data, fetch in background
+      }
+
       setLoading(true)
       setError(null)
       try {
         const cachedInfo = personalInfoRef.current
         const [metricsResult, info] = await Promise.all([
-          fetchDailyMetrics(accessToken, date, (status) => setEndpointStatus(status)),
+          fetchDailyMetrics(accessToken, date),
           cachedInfo ? Promise.resolve(cachedInfo) : fetchPersonalInfo(accessToken),
         ])
         setMetrics(metricsResult.metrics)
         setEndpointStatus(metricsResult.status)
         setPersonalInfo(info)
+        setInitialLoadDone(true)
       } catch (err: any) {
         if (err.code === "TOKEN_EXPIRED" || err.message?.includes("TOKEN_EXPIRED")) {
           clearStoredToken()
@@ -76,30 +88,28 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         setLoading(false)
       }
     },
-    // Intentionally empty: personalInfo is accessed via ref to avoid
-    // circular deps that cause double-fetching.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
+    [metrics]
   )
 
+  // If no token after 500ms, show Connect page
   useEffect(() => {
-    // Safety net: the lazy initializer in useState already checked OAuth
-    // callback + localStorage before the first render. This effect handles
-    // edge cases (e.g., StrictMode double-mount) and marks init complete.
-    setInitializing(false)
+    const timer = setTimeout(() => {
+      if (!token && !getStoredToken()) {
+        setShowConnect(true)
+      }
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [token])
 
-    // If token is still null after lazy init, try one more time via
-    // localStorage (covers edge cases where lazy init missed it).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    if (!token) {
-      const stored = getStoredToken()
-      if (stored) setToken(stored)
-    }
-  }, [])
-
+  // Load data when token becomes available or date changes
   useEffect(() => {
     if (token) {
-      loadData(token.accessToken, selectedDate)
+      // Small delay to let React render first — prevents blank page
+      const timer = setTimeout(() => {
+        loadData(token.accessToken, selectedDate)
+      }, 100)
+      return () => clearTimeout(timer)
     }
   }, [token, selectedDate, loadData])
 
@@ -116,6 +126,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setMetrics(null)
     setError(null)
     setEndpointStatus(null)
+    setInitialLoadDone(false)
     // No need to reload — route guards will redirect to /connect
     // when isAuthenticated becomes false
   }, [])
@@ -141,6 +152,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         selectedDate,
         isAuthenticated,
         initializing,
+        initialLoadDone,
+        showConnect,
         connect,
         disconnect,
         selectDate,

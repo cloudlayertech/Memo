@@ -13,18 +13,17 @@ export interface DailyMetrics {
   date: string;
   sleep: {
     score: number;           // 0-100
-    totalDuration: number;   // seconds
-    deepDuration: number;    // seconds
-    remDuration: number;     // seconds
-    lightDuration: number;   // seconds
-    latency: number;         // seconds
-    efficiency: number;      // 0-100
+    totalSleep: number;      // contributor score 0-100 (not seconds)
+    deepSleep: number;       // contributor score 0-100 (not seconds)
+    remSleep: number;        // contributor score 0-100 (not seconds)
+    latency: number;         // contributor score 0-100 (not seconds)
+    efficiency: number;      // contributor score 0-100
   } | null;
   readiness: {
     score: number;           // 0-100
-    temperatureDeviation: number;
-    restingHR: number;
-    hrvBalance: number;      // 0-100
+    restingHeartRate: number;  // contributor score 0-100 (not BPM)
+    hrvBalance: number;      // contributor score 0-100
+    bodyTemperature: number; // contributor score 0-100
   } | null;
   activity: {
     score: number;           // 0-100
@@ -180,7 +179,7 @@ export const recommendations: Recommendation[] = [
       "Efficiency below 75% means they spent significant time awake after falling asleep. Fragmented sleep reduces memory consolidation and mood stability.",
     severity: "warning",
     condition: (m) =>
-      (m.sleep?.efficiency ?? 100) < 75 && (m.sleep?.totalDuration ?? 0) > 4 * 3600,
+      (m.sleep?.efficiency ?? 100) < 75 && (m.sleep?.totalSleep ?? 0) > 4 * 3600,
     actions: [
       "Review evening routine -- limit caffeine after noon",
       "Ensure the bedroom is cool, dark, and quiet",
@@ -198,8 +197,8 @@ export const recommendations: Recommendation[] = [
       "Deep (slow-wave) sleep dropped below 45 minutes. This stage clears brain waste via the glymphatic system. Low deep sleep may leave them cognitively foggy.",
     severity: "warning",
     condition: (m) =>
-      (m.sleep?.deepDuration ?? 3600) < 45 * 60 &&
-      (m.sleep?.totalDuration ?? 0) > 5 * 3600,
+      (m.sleep?.deepSleep ?? 3600) < 45 * 60 &&
+      (m.sleep?.totalSleep ?? 0) > 5 * 3600,
     actions: [
       "Encourage daytime physical activity to deepen sleep tonight",
       "Avoid late-afternoon naps",
@@ -217,8 +216,8 @@ export const recommendations: Recommendation[] = [
       "REM duration fell below 60 minutes. REM sleep processes emotions and consolidates procedural memory. A deficit can increase emotional reactivity.",
     severity: "warning",
     condition: (m) =>
-      (m.sleep?.remDuration ?? 3600) < 60 * 60 &&
-      (m.sleep?.totalDuration ?? 0) > 5 * 3600,
+      (m.sleep?.remSleep ?? 3600) < 60 * 60 &&
+      (m.sleep?.totalSleep ?? 0) > 5 * 3600,
     actions: [
       "Keep today calm -- reduced REM can increase emotional sensitivity",
       "Avoid introducing new or potentially stressful situations",
@@ -235,7 +234,7 @@ export const recommendations: Recommendation[] = [
     description:
       "They got less than 5 hours of total sleep. Severe sleep deprivation dramatically worsens confusion, memory problems, and agitation risk.",
     severity: "critical",
-    condition: (m) => (m.sleep?.totalDuration ?? 3600 * 8) < 5 * 3600,
+    condition: (m) => (m.sleep?.totalSleep ?? 3600 * 8) < 5 * 3600,
     actions: [
       "Today is a rest day -- minimize demands and stimulation",
       "Watch closely for signs of delirium or sudden confusion",
@@ -662,7 +661,7 @@ export const recommendations: Recommendation[] = [
     severity: "info",
     condition: (m) =>
       (m.sleep?.score ?? 80) < 80 ||
-      (m.sleep?.deepDuration ?? 3600) < 60 * 60 ||
+      (m.sleep?.deepSleep ?? 3600) < 60 * 60 ||
       (m.readiness?.score ?? 80) < 70,
     actions: [
       "Draw a warm (not hot) bath 90 minutes before desired bedtime",
@@ -685,7 +684,7 @@ export const recommendations: Recommendation[] = [
       "A notable temperature deviation from their baseline (over 0.5 degrees) may signal an infection, inflammation, or other physiological stressor.",
     severity: "warning",
     condition: (m) =>
-      Math.abs(m.readiness?.temperatureDeviation ?? 0) > 0.5,
+      Math.abs(m.readiness?.bodyTemperature ?? 0) > 0.5,
     actions: [
       "Check for signs of infection: cough, sore throat, urinary changes, confusion",
       "Monitor temperature with a thermometer for confirmation",

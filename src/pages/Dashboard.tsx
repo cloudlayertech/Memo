@@ -17,19 +17,6 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "rec
 
 /* ── Helpers ─────────────────────────────────────────────── */
 
-function formatDuration(seconds: number): string {
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  if (h > 0 && m > 0) return `${h}h ${m}m`
-  if (h > 0) return `${h}h`
-  return `${m}m`
-}
-
-function formatPercent(value: number | undefined, total: number | undefined): string {
-  if (value == null || total == null || total === 0) return "--"
-  return `${Math.round((value / total) * 100)}%`
-}
-
 /* ── Card entrance animation ─────────────────────────────── */
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
@@ -59,22 +46,26 @@ function InlineMetricCard({ icon: Icon, iconColor, label, value, unit, descripti
       variants={fadeUp}
       initial="hidden"
       animate="visible"
-      whileHover={{ scale: 1.02, boxShadow: "0 4px 20px rgba(45, 42, 38, 0.10)" }}
-      className={`bg-white rounded-2xl p-5 shadow-card ${onClick ? "cursor-pointer" : ""}`}
+      whileHover={{ scale: 1.02, boxShadow: "0 8px 24px rgba(45, 42, 38, 0.12)", y: -2 }}
+      whileTap={{ scale: 0.98 }}
+      transition={{ type: "spring", stiffness: 400, damping: 25 }}
+      className={`group bg-white rounded-2xl p-5 shadow-card hover:shadow-card-hover transition-colors duration-200 ${onClick ? "cursor-pointer" : ""}`}
       onClick={onClick}
     >
       {/* Top: icon + label */}
       <div className="flex items-center gap-2 mb-3">
-        <Icon className="w-5 h-5" style={{ color: iconColor }} />
-        <span className="text-base font-medium text-memo-text-secondary">{label}</span>
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-200" style={{ backgroundColor: `${iconColor}14` }}>
+          <Icon className="w-4 h-4" style={{ color: iconColor }} />
+        </div>
+        <span className="text-sm font-medium text-memo-text-secondary tracking-wide">{label}</span>
       </div>
       {/* Middle: big number + unit */}
-      <div className="flex items-baseline gap-1 mb-2">
-        <span className="text-3xl font-bold text-memo-text">{value}</span>
-        <span className="text-base text-memo-text-secondary">{unit}</span>
+      <div className="flex items-baseline gap-1.5 mb-2">
+        <span className="text-3xl font-bold text-memo-text tracking-tight">{value}</span>
+        <span className="text-sm text-memo-text-tertiary font-medium">{unit}</span>
       </div>
       {/* Bottom: description */}
-      <p className="text-base text-memo-text-secondary leading-relaxed">{description}</p>
+      <p className="text-sm text-memo-text-secondary leading-relaxed line-clamp-2">{description}</p>
     </motion.div>
   )
 }
@@ -82,49 +73,48 @@ function InlineMetricCard({ icon: Icon, iconColor, label, value, unit, descripti
 /* ── Section Header ──────────────────────────────────────── */
 function SectionHeader({ icon: Icon, color, title }: { icon: React.ElementType; color: string; title: string }) {
   return (
-    <div className="flex items-center gap-2 mb-4">
-      <Icon className="w-5 h-5" style={{ color }} />
-      <h2 className="text-base font-semibold uppercase tracking-wider text-memo-text-secondary">{title}</h2>
-      <div className="flex-1 h-px bg-gray-200 ml-2" />
+    <div className="flex items-center gap-2.5 mb-4">
+      <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${color}14` }}>
+        <Icon className="w-4 h-4" style={{ color }} />
+      </div>
+      <h2 className="text-sm font-semibold uppercase tracking-widest text-memo-text-secondary">{title}</h2>
+      <div className="flex-1 h-px bg-gray-200/80 ml-1" />
     </div>
   )
 }
 
-/* ── Sleep Stages Bar ────────────────────────────────────── */
-function SleepStagesBar({ metrics }: { metrics: DailyMetrics }) {
+/* ── Sleep Contributors Bar ────────────────────────────────────── */
+// Oura v2 API provides contributor SCORES (0-100), not raw stage durations.
+// These scores represent how well each sleep aspect performed vs. personal baseline.
+function SleepContributorsBar({ metrics }: { metrics: DailyMetrics | null }) {
+  // If no sleep data at all, show placeholder
+  if (!metrics?.sleep) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.2 }}
+        className="bg-white rounded-2xl p-5 shadow-card mt-4"
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <Timer className="w-5 h-5" style={{ color: "#7B9EA8" }} />
+          <span className="text-base font-medium text-memo-text-secondary">Sleep Contributors</span>
+        </div>
+        <p className="text-base text-memo-text-secondary leading-relaxed">
+          <strong>Sleep contributor data not available.</strong> Connect an Oura Ring to see detailed sleep quality breakdown. Deep sleep clears amyloid plaques linked to Alzheimer&apos;s.
+        </p>
+      </motion.div>
+    )
+  }
+
   const s = metrics.sleep
-  if (!s) return null
-
-  const total = s.totalDuration
-  const hasRealData = total > 0 && (s.deepDuration > 0 || s.remDuration > 0)
-
-  /* Use real data when available, otherwise use estimated stage percentages */
-  const awakeDuration = hasRealData
-    ? Math.max(0, s.totalDuration - s.deepDuration - s.remDuration - s.lightDuration)
-    : Math.round(total * 0.07)
-  const deepPct = hasRealData
-    ? Math.round((s.deepDuration / total) * 100)
-    : Math.round((s.score * 0.18 + s.efficiency * 0.05))
-  const remPct = hasRealData
-    ? Math.round((s.remDuration / total) * 100)
-    : Math.round((s.score * 0.20 + 5))
-  const lightPct = hasRealData
-    ? Math.round((s.lightDuration / total) * 100)
-    : Math.max(0, 100 - deepPct - remPct - 7)
-  const awakePct = hasRealData
-    ? Math.max(0, 100 - deepPct - remPct - lightPct)
-    : 7
-
-  const deepDur = hasRealData ? s.deepDuration : Math.round((total * deepPct) / 100)
-  const remDur = hasRealData ? s.remDuration : Math.round((total * remPct) / 100)
-  const lightDur = hasRealData ? s.lightDuration : Math.round((total * lightPct) / 100)
-  const awakeDur = hasRealData ? awakeDuration : Math.round((total * awakePct) / 100)
-
-  const stages = [
-    { name: "Deep", pct: deepPct, duration: deepDur, color: "#5B7A83" },
-    { name: "REM", pct: remPct, duration: remDur, color: "#7B9EA8" },
-    { name: "Light", pct: lightPct, duration: lightDur, color: "#A8C4CC" },
-    { name: "Awake", pct: awakePct, duration: awakeDur, color: "#D4E2E6" },
+  // All values are contributor scores 0-100 (independent, not percentages of a total)
+  const contributors = [
+    { name: "Total Sleep", score: s.totalSleep ?? 0, color: "#5B7A83" },
+    { name: "Deep Sleep", score: s.deepSleep ?? 0, color: "#4A6741" },
+    { name: "REM Sleep", score: s.remSleep ?? 0, color: "#7B9EA8" },
+    { name: "Latency", score: s.latency ?? 0, color: "#A8C4CC" },
+    { name: "Efficiency", score: s.efficiency ?? 0, color: "#9B8BB5" },
   ]
 
   return (
@@ -136,35 +126,26 @@ function SleepStagesBar({ metrics }: { metrics: DailyMetrics }) {
     >
       <div className="flex items-center gap-2 mb-3">
         <Timer className="w-5 h-5" style={{ color: "#7B9EA8" }} />
-        <span className="text-base font-medium text-memo-text-secondary">Sleep Stages</span>
-        {!hasRealData && (
-          <span className="text-sm text-memo-text-tertiary ml-2">(estimated)</span>
-        )}
+        <span className="text-base font-medium text-memo-text-secondary">Sleep Contributors</span>
       </div>
-      {/* Stacked bar */}
-      <div className="flex h-6 rounded-full overflow-hidden mb-3">
-        {stages.map((stage) => (
-          <div
-            key={stage.name}
-            style={{ width: `${stage.pct}%`, backgroundColor: stage.color }}
-            title={`${stage.name}: ${stage.pct}% (${formatDuration(stage.duration)})`}
-          />
-        ))}
-      </div>
-      {/* Legend */}
-      <div className="flex flex-wrap gap-4">
-        {stages.map((stage) => (
-          <div key={stage.name} className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: stage.color }} />
-            <span className="text-base text-memo-text-secondary">
-              {stage.name} {stage.pct}% — {formatDuration(stage.duration)}
-            </span>
+      {/* Score bars */}
+      <div className="space-y-2 mb-3">
+        {contributors.map((c) => (
+          <div key={c.name} className="flex items-center gap-3">
+            <span className="text-sm text-memo-text-secondary w-24 flex-shrink-0">{c.name}</span>
+            <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all"
+                style={{ width: `${c.score}%`, backgroundColor: c.color }}
+              />
+            </div>
+            <span className="text-sm font-medium text-memo-text w-10 text-right">{c.score}</span>
           </div>
         ))}
       </div>
       {/* Note */}
       <p className="text-base text-memo-text-secondary leading-relaxed mt-3 pt-3 border-t border-gray-100">
-        Deep sleep clears amyloid plaques linked to Alzheimer&apos;s. Target: 15-20% deep, 20-25% REM.
+        Higher contributor scores mean better sleep quality for that metric. Deep sleep clears amyloid plaques linked to Alzheimer&apos;s.
       </p>
     </motion.div>
   )
@@ -179,6 +160,13 @@ export default function Dashboard() {
   const [activeSheet, setActiveSheet] = useState<MetricCategory | null>(null)
   const [showDebug, setShowDebug] = useState(false)
   const [alertExpanded, setAlertExpanded] = useState(false)
+  const [alertDismissed, setAlertDismissed] = useState(() => {
+    try {
+      return sessionStorage.getItem("memo_alert_dismissed") === "true"
+    } catch {
+      return false
+    }
+  })
   const navigate = useNavigate()
 
   const weekDays = useMemo(() => getWeekDays(selectedDate), [selectedDate])
@@ -279,8 +267,8 @@ export default function Dashboard() {
             {[
               { label: "Sleep Score", value: `${metrics.sleep.score}`, pct: metrics.sleep.score },
               { label: "Efficiency", value: `${metrics.sleep.efficiency}%`, pct: metrics.sleep.efficiency },
-              { label: "Deep Sleep", value: formatPercent(metrics.sleep.deepDuration, metrics.sleep.totalDuration), pct: Math.round((metrics.sleep.deepDuration / metrics.sleep.totalDuration) * 100) },
-              { label: "REM Sleep", value: formatPercent(metrics.sleep.remDuration, metrics.sleep.totalDuration), pct: Math.round((metrics.sleep.remDuration / metrics.sleep.totalDuration) * 100) },
+              { label: "Deep Sleep", value: `${metrics.sleep.deepSleep} / 100`, pct: metrics.sleep.deepSleep },
+              { label: "REM Sleep", value: `${metrics.sleep.remSleep} / 100`, pct: metrics.sleep.remSleep },
             ].map((s) => (
               <div key={s.label} className="bg-memo-bg rounded-xl p-3">
                 <p className="text-base text-memo-text-tertiary uppercase tracking-wider">{s.label}</p>
@@ -318,10 +306,10 @@ export default function Dashboard() {
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35 }}
-      className="flex items-center justify-between gap-4 mb-6"
+      className="flex items-center justify-between gap-3 mb-6 flex-wrap sm:flex-nowrap"
     >
-      {/* Left: Logo + Live badge */}
-      <div className="flex items-center gap-4">
+      {/* Left: Logo + Live badge — flex-shrink-0 prevents squeezing */}
+      <div className="flex items-center gap-3 flex-shrink-0">
         <h1 className="text-3xl font-bold text-memo-text tracking-tight">memo</h1>
         {!isErrorState && (
           <div className="flex items-center gap-2">
@@ -329,7 +317,7 @@ export default function Dashboard() {
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               Live
             </span>
-            <div className="relative w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-card">
+            <div className="relative w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-card flex-shrink-0">
               <svg viewBox="0 0 36 36" className="w-10 h-10">
                 <circle cx="18" cy="18" r="15.9" fill="none" stroke="#E5E7EB" strokeWidth="3" />
                 <circle
@@ -346,11 +334,11 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Right: greeting + date + buttons */}
-      <div className="flex items-center gap-3">
+      {/* Right: greeting + date + buttons — min-w-0 allows truncation, flex-shrink-0 prevents button squeeze */}
+      <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 min-w-0 ml-auto">
         {!isErrorState && (
-          <div className="text-right mr-1">
-            <p className="text-lg font-semibold text-memo-text">
+          <div className="text-right mr-1 flex-shrink-0 min-w-0 hidden sm:block">
+            <p className="text-lg font-semibold text-memo-text truncate">
               {new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening"}
               {personalInfo?.name ? `, ${personalInfo.name.split(" ")[0]}` : ""}
             </p>
@@ -360,7 +348,7 @@ export default function Dashboard() {
         {!isErrorState && (
           <button
             onClick={refreshData}
-            className="w-11 h-11 rounded-xl bg-white shadow-card flex items-center justify-center hover:bg-memo-bg transition-colors"
+            className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white shadow-card flex items-center justify-center hover:bg-memo-bg hover:shadow-card-hover hover:scale-105 active:scale-95 transition-all duration-200 flex-shrink-0"
             title="Refresh data"
           >
             <RefreshCw className="w-5 h-5 text-memo-text-secondary" />
@@ -368,7 +356,7 @@ export default function Dashboard() {
         )}
         <button
           onClick={() => setShowDebug(!showDebug)}
-          className={`w-11 h-11 rounded-xl flex items-center justify-center transition-colors ${showDebug ? "bg-[#8B6F4E] text-white shadow-md" : "bg-white shadow-card text-memo-text-secondary hover:bg-memo-bg"}`}
+          className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 flex-shrink-0 ${showDebug ? "bg-[#8B6F4E] text-white shadow-md" : "bg-white shadow-card text-memo-text-secondary hover:bg-memo-bg hover:shadow-card-hover"}`}
           title="Toggle debug panel"
         >
           <Bug className="w-5 h-5" />
@@ -408,33 +396,68 @@ export default function Dashboard() {
   )
 
   /* ── Alert Banner: "A Few Areas to Watch" ──────────────── */
+  // Count actually missing endpoints (not just low scores)
+  const missingEndpoints = useMemo(() => {
+    if (!endpointStatus) return 0
+    return Object.values(endpointStatus).filter((s) => s === "error" || s === "missing").length
+  }, [endpointStatus])
+
+  const dismissAlert = () => {
+    setAlertDismissed(true)
+    try {
+      sessionStorage.setItem("memo_alert_dismissed", "true")
+    } catch {
+      /* ignore */
+    }
+  }
+
   const renderAlertBanner = () => {
+    // Only show if: not dismissed, at least 3 endpoints missing, AND we have warning recs
+    if (alertDismissed) return null
+    if (missingEndpoints < 3 && warningRecs.length === 0) return null
     if (warningRecs.length === 0) return null
+
     return (
       <motion.div
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, delay: 0.1 }}
-        className="bg-amber-50 border border-amber-300 rounded-2xl p-4 mb-5"
+        className="relative bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-4 mb-6 shadow-sm"
       >
+        {/* Dismiss button */}
+        <button
+          onClick={dismissAlert}
+          className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center text-amber-400 hover:text-amber-700 hover:bg-amber-100 transition-colors"
+          title="Dismiss"
+          aria-label="Dismiss alert"
+        >
+          <span className="text-lg leading-none">&times;</span>
+        </button>
+
         <button
           onClick={() => setAlertExpanded(!alertExpanded)}
-          className="flex items-center justify-between w-full text-left"
+          className="flex items-center justify-between w-full text-left pr-6"
         >
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
-              <AlertTriangle className="w-4 h-4 text-amber-600" />
+            <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+              <AlertTriangle className="w-5 h-5 text-amber-600" />
             </div>
             <div>
               <h3 className="text-lg font-semibold text-amber-800">A Few Areas to Watch</h3>
-              <p className="text-base text-amber-700">{warningRecs.length} concern{warningRecs.length > 1 ? "s" : ""} detected today</p>
+              <p className="text-sm text-amber-600">
+                {missingEndpoints >= 3
+                  ? `${missingEndpoints} data sources unavailable — some metrics may be incomplete`
+                  : `${warningRecs.length} concern${warningRecs.length > 1 ? "s" : ""} detected today`}
+              </p>
             </div>
           </div>
-          {alertExpanded ? (
-            <ChevronUp className="w-5 h-5 text-amber-600" />
-          ) : (
-            <ChevronDown className="w-5 h-5 text-amber-600" />
-          )}
+          <div className="flex-shrink-0">
+            {alertExpanded ? (
+              <ChevronUp className="w-5 h-5 text-amber-600" />
+            ) : (
+              <ChevronDown className="w-5 h-5 text-amber-600" />
+            )}
+          </div>
         </button>
 
         <AnimatePresence>
@@ -446,7 +469,7 @@ export default function Dashboard() {
               transition={{ duration: 0.25 }}
               className="overflow-hidden"
             >
-              <div className="mt-3 pt-3 border-t border-amber-200 space-y-3">
+              <div className="mt-3 pt-3 border-t border-amber-200/60 space-y-3">
                 {warningRecs.slice(0, 3).map((rec) => (
                   <div key={rec.id} className="flex items-start gap-3">
                     <div
@@ -458,7 +481,7 @@ export default function Dashboard() {
                     />
                     <div>
                       <p className="text-base font-medium text-amber-900">{rec.title}</p>
-                      <p className="text-base text-amber-800 leading-relaxed">{rec.description}</p>
+                      <p className="text-base text-amber-800/80 leading-relaxed">{rec.description}</p>
                     </div>
                   </div>
                 ))}
@@ -471,55 +494,60 @@ export default function Dashboard() {
   }
 
   /* ── SLEEP Section ─────────────────────────────────────── */
+  /* FIX: Always render — cards show "--" when data is missing */
   const renderSleepSection = () => {
-    if (!metrics?.sleep) return null
-    const s = metrics.sleep
-    const hasDurations = s.totalDuration > 0 && (s.deepDuration > 0 || s.remDuration > 0)
+    const s = metrics?.sleep
+    const hasData = s != null
 
-    /* Oura v2 API provides contributor scores (0-100), not raw durations.
-       When durations are 0, derive display values from available scores. */
-    const sleepQuality = s.score >= 80 ? "Optimal" : s.score >= 60 ? "Moderate" : "Low"
-    const efficiencyQuality = s.efficiency >= 85 ? "Good" : s.efficiency >= 60 ? "Moderate" : "Low"
+    const sleepScore = s?.score ?? 0
+    const sleepEfficiency = s?.efficiency ?? 0
+    // Oura v2 API provides contributor SCORES (0-100), not raw durations
+    const totalSleepScore = s?.totalSleep ?? 0
+    const deepSleepScore = s?.deepSleep ?? 0
+    const remSleepScore = s?.remSleep ?? 0
+    const hasContributors = totalSleepScore > 0 || deepSleepScore > 0 || remSleepScore > 0
 
-    /* Estimate deep/REM percentages from scores when raw durations unavailable */
-    const deepPct = hasDurations
-      ? Math.round((s.deepDuration / s.totalDuration) * 100)
-      : Math.round((s.score * 0.18 + s.efficiency * 0.05)) // rough estimate ~15-25%
-    const remPct = hasDurations
-      ? Math.round((s.remDuration / s.totalDuration) * 100)
-      : Math.round((s.score * 0.20 + 5)) // rough estimate ~18-25%
+    const sleepQuality = !hasData ? "No data" : sleepScore >= 80 ? "Optimal" : sleepScore >= 60 ? "Moderate" : "Low"
+    const efficiencyQuality = !hasData ? "No data" : sleepEfficiency >= 85 ? "Good" : sleepEfficiency >= 60 ? "Moderate" : "Low"
 
-    const deepDurationStr = hasDurations ? formatDuration(s.deepDuration) : "~1h 30m"
-    const remDurationStr = hasDurations ? formatDuration(s.remDuration) : "~1h 36m"
+    // Display contributor scores directly (0-100) since v2 API doesn't provide raw durations
+    const deepDisplay = hasContributors ? deepSleepScore : Math.round((sleepScore * 0.18 + sleepEfficiency * 0.05))
+    const remDisplay = hasContributors ? remSleepScore : Math.round((sleepScore * 0.20 + 5))
 
     const cards = [
       {
         icon: Moon,
         label: "Sleep Score",
-        value: s.score != null && s.score > 0 ? String(s.score) : "--",
+        value: s?.score != null && s.score > 0 ? String(s.score) : "--",
         unit: "/ 100",
         description: `${sleepQuality} for memory consolidation`,
       },
       {
         icon: Timer,
         label: "Sleep Efficiency",
-        value: s.efficiency != null && s.efficiency > 0 ? `${s.efficiency}` : "--",
+        value: s?.efficiency != null && s.efficiency > 0 ? `${s.efficiency}` : "--",
         unit: "%",
-        description: `${efficiencyQuality} — ${s.efficiency >= 85 ? "restorative sleep pattern" : "more awake time detected, may impact memory"}`,
+        description: !hasData
+          ? "No sleep data available"
+          : `${efficiencyQuality} — ${sleepEfficiency >= 85 ? "restorative sleep pattern" : "more awake time detected, may impact memory"}`,
       },
       {
         icon: Moon,
         label: "Deep Sleep",
-        value: `${deepPct}`,
-        unit: "%",
-        description: `${deepDurationStr} — Clears brain plaque linked to Alzheimer's`,
+        value: hasData ? `${deepDisplay}` : "--",
+        unit: "/ 100",
+        description: hasContributors
+          ? `Deep sleep contributor score — Clears brain plaque linked to Alzheimer's`
+          : `~${Math.round(deepDisplay * 0.018 + 5)}% estimated — Clears brain plaque linked to Alzheimer's`,
       },
       {
         icon: Moon,
         label: "REM Sleep",
-        value: `${remPct}`,
-        unit: "%",
-        description: `${remDurationStr} — Memory processing and emotional regulation`,
+        value: hasData ? `${remDisplay}` : "--",
+        unit: "/ 100",
+        description: hasContributors
+          ? `REM sleep contributor score — Memory processing and emotional regulation`
+          : `~${Math.round(remDisplay * 0.020 + 3)}% estimated — Memory processing and emotional regulation`,
       },
     ]
 
@@ -541,74 +569,70 @@ export default function Dashboard() {
             />
           ))}
         </div>
-        {hasDurations && <SleepStagesBar metrics={metrics} />}
-        {!hasDurations && (
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.2 }}
-            className="bg-white rounded-2xl p-5 shadow-card mt-4"
-          >
-            <p className="text-base text-memo-text-secondary leading-relaxed">
-              <strong>Sleep stages note:</strong> Detailed sleep stage breakdown requires Oura Ring connection with sleep stage data. Deep sleep clears amyloid plaques linked to Alzheimer&apos;s. Target: 15-20% deep, 20-25% REM.
-            </p>
-          </motion.div>
-        )}
+        <SleepContributorsBar metrics={metrics} />
       </div>
     )
   }
 
   /* ── HEART HEALTH Section ──────────────────────────────── */
+  /* FIX: Always render — cards show "--" when data is missing */
   const renderHeartSection = () => {
-    if (!metrics?.heartRate && !metrics?.readiness) return null
-    const hr = metrics.heartRate
-    const rd = metrics.readiness
+    const hr = metrics?.heartRate
+    const rd = metrics?.readiness
+    const hasAnyData = hr != null || rd != null
 
     // Card 1: HRV in ms (estimated from readiness hrvBalance score)
     const hrvBalance = rd?.hrvBalance
     const hrvMs = hrvBalance != null && hrvBalance > 0
       ? Math.round(hrvBalance * 0.5 + 15)
       : null
-    const hrvDesc = !hrvMs
-      ? "No HRV data available"
-      : hrvBalance! < 60
-        ? "Low — stress reduction and deep breathing help"
-        : hrvBalance! < 80
-          ? "Moderate"
-          : "Good — recovery is on track"
+    const hrvDesc = !hasAnyData
+      ? "No heart data available"
+      : !hrvMs
+        ? "No HRV data available"
+        : hrvBalance! < 60
+          ? "Low — stress reduction and deep breathing help"
+          : hrvBalance! < 80
+            ? "Moderate"
+            : "Good — recovery is on track"
 
-    // Card 2: Resting HR from readiness (primary) or heartRate data
-    // FIX: Check > 0 instead of just truthy — Oura returns 0 when field is missing
-    const restingHRValue = rd?.restingHR ?? hr?.resting ?? 0
+    // Card 2: Resting HR from heartRate.resting (primary) or readiness
+    const restingHRValue = hr?.resting ?? rd?.restingHeartRate ?? 0
     const hasRestingHR = restingHRValue > 0
     const restingHRDisplay = hasRestingHR ? `${restingHRValue}` : "--"
-    const restingDesc = !hasRestingHR
-      ? "No data available"
-      : restingHRValue > 80
-        ? "Elevated — check for stress or dehydration"
-        : restingHRValue >= 60
-          ? "Healthy range"
-          : "Low — monitor if symptomatic"
+    const restingDesc = !hasAnyData
+      ? "No heart data available"
+      : !hasRestingHR
+        ? "No resting HR data available"
+        : restingHRValue > 80
+          ? "Elevated — check for stress or dehydration"
+          : restingHRValue >= 60
+            ? "Healthy range"
+            : "Low — monitor if symptomatic"
 
-    // Card 3: Night HR (10 PM – 6 AM) from heartRate.nightAvg
-    const nightAvg = hr?.nightAvg
+    // Card 3: Night HR (10 PM – 6 AM) from heartRate.avg
+    const nightAvg = hr?.avg ?? hr?.nightAvg
     const nightMin = hr?.nightMin
     const hasNightHR = nightAvg != null && nightAvg > 0
     const nightHRValue = hasNightHR ? `${nightAvg}` : "--"
-    const nightDesc = hasNightHR
-      ? `Lowest: ${nightMin} bpm — Night HR linked to cognitive decline risk`
-      : "No nighttime data available"
+    const nightDesc = !hasAnyData
+      ? "No heart data available"
+      : hasNightHR
+        ? `Lowest: ${nightMin ?? "--"} bpm — Night HR linked to cognitive decline risk`
+        : "No nighttime data available"
 
     // Card 4: HRV Balance (readiness score 0-100)
     const hasHrvBalance = hrvBalance != null && hrvBalance > 0
     const hrvBalanceValue = hasHrvBalance ? `${hrvBalance}` : "--"
-    const hrvBalanceDesc = !hasHrvBalance
-      ? "No data available"
-      : hrvBalance < 60
-        ? "Below optimal — prioritize rest and recovery"
-        : hrvBalance < 80
-          ? "Moderate — adequate recovery"
-          : "Optimal — nervous system is well recovered"
+    const hrvBalanceDesc = !hasAnyData
+      ? "No heart data available"
+      : !hasHrvBalance
+        ? "No HRV balance data available"
+        : hrvBalance < 60
+          ? "Below optimal — prioritize rest and recovery"
+          : hrvBalance < 80
+            ? "Moderate — adequate recovery"
+            : "Optimal — nervous system is well recovered"
 
     const cards = [
       {
@@ -664,41 +688,55 @@ export default function Dashboard() {
   }
 
   /* ── ACTIVITY Section ──────────────────────────────────── */
+  /* FIX: Always render — cards show "--" when data is missing */
   const renderActivitySection = () => {
-    if (!metrics?.activity) return null
-    const a = metrics.activity
+    const a = metrics?.activity
+    const hasData = a != null
     const stepGoal = 8000
-    const stepPct = a.steps > 0 ? Math.min(100, Math.round((a.steps / stepGoal) * 100)) : 0
-    const inactiveMin = a.steps > 0 ? Math.max(0, 720 - Math.round(a.steps / 20)) : 0
+    const steps = a?.steps ?? 0
+    const stepPct = steps > 0 ? Math.min(100, Math.round((steps / stepGoal) * 100)) : 0
+    const inactiveMin = steps > 0 ? Math.max(0, 720 - Math.round(steps / 20)) : 0
 
     const cards = [
       {
         icon: Footprints,
         label: "Steps",
-        value: a.steps != null && a.steps > 0 ? a.steps.toLocaleString() : "--",
+        value: steps != null && steps > 0 ? steps.toLocaleString() : "--",
         unit: "",
-        description: `${stepPct > 0 ? stepPct : "--"}% of ${stepGoal.toLocaleString()} goal — Walking protects memory and supports brain blood flow`,
+        description: hasData
+          ? `${stepPct > 0 ? stepPct : "--"}% of ${stepGoal.toLocaleString()} goal — Walking protects memory and supports brain blood flow`
+          : "No activity data available",
       },
       {
         icon: Activity,
         label: "Activity Score",
-        value: a.score != null && a.score > 0 ? `${a.score}` : "--",
+        value: a?.score != null && a.score > 0 ? `${a.score}` : "--",
         unit: "/ 100",
-        description: !a.score ? "No data available" : a.score >= 80 ? "Great activity level — movement supports cognitive health" : a.score >= 60 ? "Moderate — aim for more daily movement" : "Low — gentle walks help memory retention",
+        description: !hasData
+          ? "No activity data available"
+          : a!.score >= 80
+            ? "Great activity level — movement supports cognitive health"
+            : a!.score >= 60
+              ? "Moderate — aim for more daily movement"
+              : "Low — gentle walks help memory retention",
       },
       {
         icon: TrendingUp,
         label: "Active Calories",
-        value: a.activeCalories != null && a.activeCalories > 0 ? `${a.activeCalories}` : "--",
+        value: a?.activeCalories != null && a.activeCalories > 0 ? `${a.activeCalories}` : "--",
         unit: "cal",
-        description: "Calories burned during activity — fuels brain energy demands",
+        description: hasData
+          ? "Calories burned during activity — fuels brain energy demands"
+          : "No activity data available",
       },
       {
         icon: TrendingDown,
         label: "Inactive Time",
         value: inactiveMin > 0 ? `${inactiveMin}` : "--",
         unit: "min",
-        description: "Time sitting still — try to move every hour to protect brain circulation",
+        description: hasData
+          ? "Time sitting still — try to move every hour to protect brain circulation"
+          : "No activity data available",
       },
     ]
 
@@ -725,58 +763,67 @@ export default function Dashboard() {
   }
 
   /* ── BLOOD OXYGEN Section ──────────────────────────────── */
-  /* FIX: Always render this section — show "--" when SpO2 endpoint fails */
+  /* FIX: Always render — show "--" when SpO2 endpoint fails */
   const renderSpO2Section = () => {
     const sp = metrics?.spo2
     const rd = metrics?.readiness
+    const hasAnyData = sp != null || rd != null
 
     // Card 1: SpO2 Average
     const spo2Avg = sp?.average
     const hasSpo2 = spo2Avg != null && spo2Avg > 0
     const spo2Value = hasSpo2 ? `${spo2Avg}` : "--"
-    const spo2Desc = !hasSpo2
-      ? "SpO2 data not available — ensure Oura Ring is properly positioned"
-      : spo2Avg >= 95
-        ? "Normal — good oxygenation supports brain function"
-        : spo2Avg >= 92
-          ? "Mildly low — monitor for cognitive effects"
-          : "Low — low oxygen affects brain function and may cause confusion"
+    const spo2Desc = !hasAnyData
+      ? "No blood oxygen data available"
+      : !hasSpo2
+        ? "SpO2 data not available — ensure Oura Ring is properly positioned"
+        : spo2Avg >= 95
+          ? "Normal — good oxygenation supports brain function"
+          : spo2Avg >= 92
+            ? "Mildly low — monitor for cognitive effects"
+            : "Low — low oxygen affects brain function and may cause confusion"
 
     // Card 2: Breathing Disturbance Index
     const bdi = sp?.breathingDisturbanceIndex
     const hasBdi = bdi != null && bdi > 0
     const bdiValue = hasBdi ? `${bdi}` : "--"
-    const bdiDesc = !hasBdi
+    const bdiDesc = !hasAnyData
       ? "No breathing disturbance data available"
-      : bdi > 15
-        ? "High — possible sleep apnea, linked to amyloid buildup"
-        : bdi > 5
-          ? "Elevated — monitor trends"
-          : "Normal breathing pattern"
+      : !hasBdi
+        ? "No breathing disturbance data available"
+        : bdi > 15
+          ? "High — possible sleep apnea, linked to amyloid buildup"
+          : bdi > 5
+            ? "Elevated — monitor trends"
+            : "Normal breathing pattern"
 
-    // Card 3: HRV Balance (from readiness) — useful context alongside oxygen
+    // Card 3: HRV Balance (from readiness)
     const hrvBalance = rd?.hrvBalance
     const hasHrvBalance = hrvBalance != null && hrvBalance > 0
     const hrvBalanceValue = hasHrvBalance ? `${hrvBalance}` : "--"
-    const hrvBalanceDesc = !hasHrvBalance
-      ? "No readiness data available"
-      : hrvBalance < 60
-        ? "Below optimal — prioritize rest and recovery"
-        : hrvBalance < 80
-          ? "Moderate — adequate recovery"
-          : "Optimal — nervous system is well recovered"
+    const hrvBalanceDesc = !hasAnyData
+      ? "No data available"
+      : !hasHrvBalance
+        ? "No readiness data available"
+        : hrvBalance < 60
+          ? "Below optimal — prioritize rest and recovery"
+          : hrvBalance < 80
+            ? "Moderate — adequate recovery"
+            : "Optimal — nervous system is well recovered"
 
-    // Card 4: Readiness Score (from readiness) — overall recovery context
+    // Card 4: Readiness Score
     const readinessScore = rd?.score
     const hasReadiness = readinessScore != null && readinessScore > 0
     const readinessValue = hasReadiness ? `${readinessScore}` : "--"
-    const readinessDesc = !hasReadiness
-      ? "No readiness data available"
-      : readinessScore >= 80
-        ? "Well recovered — your body is ready for cognitive demands"
-        : readinessScore >= 60
-          ? "Moderate recovery — balance activity with rest"
-          : "Low recovery — prioritize rest to protect brain health"
+    const readinessDesc = !hasAnyData
+      ? "No data available"
+      : !hasReadiness
+        ? "No readiness data available"
+        : readinessScore >= 80
+          ? "Well recovered — your body is ready for cognitive demands"
+          : readinessScore >= 60
+            ? "Moderate recovery — balance activity with rest"
+            : "Low recovery — prioritize rest to protect brain health"
 
     const cards = [
       {
@@ -832,58 +879,68 @@ export default function Dashboard() {
   }
 
   /* ── STRESS Section ────────────────────────────────────── */
+  /* FIX: Always render — cards show "--" when data is missing */
   const renderStressSection = () => {
-    if (!metrics?.stress && !metrics?.readiness) return null
-    const st = metrics.stress
-    const rd = metrics.readiness
+    const st = metrics?.stress
+    const rd = metrics?.readiness
+    const res = metrics?.resilience
+    const hasAnyData = st != null || rd != null
 
-    // Card 1: Stress Score — uses stress.daySummary (0-100), NOT resilience.level
+    // Card 1: Stress Score — uses stress.daySummary (0-100)
     const stressScore = st?.daySummary
     const hasStress = stressScore != null && stressScore > 0
     const stressValue = hasStress ? `${stressScore}` : "--"
-    const stressDesc = !hasStress
+    const stressDesc = !hasAnyData
       ? "No stress data available"
-      : stressScore > 70
-        ? "High — chronic stress accelerates memory decline via cortisol damage"
-        : stressScore > 40
-          ? "Moderate — relaxation practices help protect the hippocampus"
-          : "Low — good stress management supports long-term memory health"
+      : !hasStress
+        ? "No stress data available"
+        : stressScore > 70
+          ? "High — chronic stress accelerates memory decline via cortisol damage"
+          : stressScore > 40
+            ? "Moderate — relaxation practices help protect the hippocampus"
+            : "Low — good stress management supports long-term memory health"
 
     // Card 2: Recovery — stress.recoveryHigh is in SECONDS, convert to hours
     const recoverySeconds = st?.recoveryHigh
     const hasRecovery = recoverySeconds != null && recoverySeconds > 0
     const recoveryHours = hasRecovery ? (recoverySeconds / 3600).toFixed(1) : null
     const recoveryValue = recoveryHours != null ? `${recoveryHours}` : "--"
-    const recoveryDesc = !hasRecovery
+    const recoveryDesc = !hasAnyData
       ? "No recovery data available"
-      : recoverySeconds > 2 * 3600
-        ? "Good recovery — rest repairs neural pathways"
-        : "Short recovery — prioritize rest to protect cognitive function"
+      : !hasRecovery
+        ? "No recovery data available"
+        : recoverySeconds > 2 * 3600
+          ? "Good recovery — rest repairs neural pathways"
+          : "Short recovery — prioritize rest to protect cognitive function"
 
-    // Card 3: Stress High — time in high stress state, in seconds → hours
+    // Card 3: Stress High — time in high stress state, in seconds -> hours
     const stressHighSeconds = st?.stressHigh
     const hasStressHigh = stressHighSeconds != null && stressHighSeconds > 0
     const stressHighHours = hasStressHigh ? (stressHighSeconds / 3600).toFixed(1) : null
     const stressHighValue = stressHighHours != null ? `${stressHighHours}` : "--"
-    const stressHighDesc = !hasStressHigh
+    const stressHighDesc = !hasAnyData
       ? "No stress high data available"
-      : stressHighSeconds > 4 * 3600
-        ? "Extended high stress — take breaks to lower cortisol"
-        : stressHighSeconds > 2 * 3600
-          ? "Moderate high-stress time — mindfulness can help"
-          : "Low time in high stress — good autonomic balance"
+      : !hasStressHigh
+        ? "No stress high data available"
+        : stressHighSeconds > 4 * 3600
+          ? "Extended high stress — take breaks to lower cortisol"
+          : stressHighSeconds > 2 * 3600
+            ? "Moderate high-stress time — mindfulness can help"
+            : "Low time in high stress — good autonomic balance"
 
-    // Card 4: Readiness Score — from readiness data, complementary to stress
-    const readinessScore = rd?.score
-    const hasReadiness = readinessScore != null && readinessScore > 0
-    const readinessValue = hasReadiness ? `${readinessScore}` : "--"
-    const readinessDesc = !hasReadiness
-      ? "No readiness data available"
-      : readinessScore >= 80
-        ? "Well recovered — good resilience to daily stressors"
-        : readinessScore >= 60
-          ? "Moderate — support recovery with quality sleep"
-          : "Low readiness — prioritize restorative activities"
+    // Card 4: Resilience Score — from resilience data
+    const resilienceScore = res?.score
+    const hasResilience = resilienceScore != null && resilienceScore > 0
+    const resilienceValue = hasResilience ? `${resilienceScore}` : "--"
+    const resilienceDesc = !hasAnyData
+      ? "No resilience data available"
+      : !hasResilience
+        ? "No resilience data available"
+        : resilienceScore >= 80
+          ? "Strong resilience — good capacity to handle daily stressors"
+          : resilienceScore >= 60
+            ? "Moderate — support recovery with quality sleep"
+            : "Low resilience — prioritize restorative activities"
 
     const cards = [
       {
@@ -909,10 +966,10 @@ export default function Dashboard() {
       },
       {
         icon: HeartPulse,
-        label: "Readiness",
-        value: readinessValue,
+        label: "Resilience",
+        value: resilienceValue,
         unit: "/ 100",
-        description: readinessDesc,
+        description: resilienceDesc,
       },
     ]
 
@@ -946,7 +1003,7 @@ export default function Dashboard() {
   if (error) {
     return (
       <div className="min-h-[100dvh] bg-memo-bg px-4 md:px-8 pt-6 pb-10">
-        <div className="w-full">
+        <div className="w-full max-w-[1440px] mx-auto">
           {renderHeader(true)}
 
           <div className="text-center py-16">
@@ -973,7 +1030,7 @@ export default function Dashboard() {
   /* ==================== NORMAL STATE ==================== */
   return (
     <div className="min-h-[100dvh] bg-memo-bg px-4 md:px-8 pt-6 pb-10">
-      <div className="w-full space-y-5">
+      <div className="w-full max-w-[1440px] mx-auto">
         {renderHeader()}
 
         {/* Loading indicator — inline, doesn't block content */}
@@ -981,10 +1038,10 @@ export default function Dashboard() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="flex items-center gap-3 px-4 py-3 bg-white rounded-xl shadow-card"
+            className="flex items-center gap-2 px-4 py-2 bg-amber-50 rounded-xl mb-4"
           >
-            <RefreshCw className="w-5 h-5 text-[#8B6F4E] animate-spin" />
-            <span className="text-sm text-memo-text-secondary">Updating data...</span>
+            <RefreshCw className="w-4 h-4 animate-spin text-amber-600" />
+            <span className="text-sm text-amber-700">Loading health data...</span>
           </motion.div>
         )}
 
@@ -993,6 +1050,7 @@ export default function Dashboard() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35, delay: 0.05 }}
+          className="mb-6"
         >
           <CalendarStrip days={weekDays} selectedDate={selectedDate} onSelectDate={selectDate} />
         </motion.div>
@@ -1003,7 +1061,7 @@ export default function Dashboard() {
             <p className="text-lg text-memo-text-tertiary">No data available for this date.</p>
           </div>
         ) : (
-          <>
+          <div className="space-y-6">
             {/* Alert Banner: A Few Areas to Watch */}
             {renderAlertBanner()}
 
@@ -1014,13 +1072,13 @@ export default function Dashboard() {
                 variants={fadeUp}
                 initial="hidden"
                 animate="visible"
-                className="bg-white rounded-2xl shadow-card p-5 mb-6"
+                className="bg-white rounded-2xl shadow-card p-5 md:p-6 hover:shadow-card-hover transition-shadow duration-200"
               >
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-xl font-semibold text-memo-text">Today&apos;s Insights</h2>
                   <button
                     onClick={() => navigate("/recommendations")}
-                    className="flex items-center gap-1 text-base text-[#8B6F4E] hover:text-[#6B5337] font-semibold transition-colors"
+                    className="flex items-center gap-1 text-sm text-[#8B6F4E] hover:text-[#6B5337] font-semibold transition-colors hover:gap-1.5"
                   >
                     View All <ChevronRight className="w-4 h-4" />
                   </button>
@@ -1050,16 +1108,18 @@ export default function Dashboard() {
             )}
 
             {/* Daily Care Plan */}
-            <DailyPlan metrics={metrics} />
+            <div className="mb-6">
+              <DailyPlan metrics={metrics} />
+            </div>
 
             {/* ── Health Sections ────────────────────────── */}
-            {metrics?.sleep && renderSleepSection()}
-            {(metrics?.heartRate || metrics?.readiness) && renderHeartSection()}
-            {metrics?.activity && renderActivitySection()}
-            {/* FIX: Always render Blood Oxygen section — handles null internally */}
+            {/* FIX: Always render all sections — each handles missing data internally */}
+            {renderSleepSection()}
+            {renderHeartSection()}
+            {renderActivitySection()}
             {renderSpO2Section()}
-            {(metrics?.stress || metrics?.readiness) && renderStressSection()}
-          </>
+            {renderStressSection()}
+          </div>
         )}
 
         {renderDebugPanel()}

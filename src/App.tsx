@@ -7,24 +7,13 @@ import Trends from "@/pages/Trends"
 import Recommendations from "@/pages/Recommendations"
 import Settings from "@/pages/Settings"
 import Notes from "@/pages/Notes"
-import { RefreshCw } from "lucide-react"
 
 function App() {
-  const { isAuthenticated, initializing } = useData()
+  const { isAuthenticated, showConnect } = useData()
 
-  /* Show loading screen while checking for stored token — prevents
-     blank page flash or premature redirect to /connect */
-  if (initializing) {
-    return (
-      <div className="min-h-[100dvh] bg-memo-bg flex items-center justify-center">
-        <div className="text-center">
-          <RefreshCw className="w-8 h-8 text-[#8B6F4E] animate-spin mx-auto mb-3" />
-          <p className="text-lg text-memo-text-secondary">Loading...</p>
-        </div>
-      </div>
-    )
-  }
-
+  /* The app shows content immediately — no loading spinner.
+     Data loads in the background. If no token exists after 500ms,
+     showConnect becomes true and we redirect to /connect. */
   return (
     <Layout>
       <Routes>
@@ -34,7 +23,16 @@ function App() {
         />
         <Route
           path="/"
-          element={isAuthenticated ? <Dashboard /> : <Navigate to="/connect" replace />}
+          element={
+            isAuthenticated ? (
+              <Dashboard />
+            ) : showConnect ? (
+              <Navigate to="/connect" replace />
+            ) : (
+              /* Brief grace period — renders nothing while we check for token */
+              <div className="min-h-[60dvh] bg-memo-bg" />
+            )
+          }
         />
         <Route
           path="/trends"

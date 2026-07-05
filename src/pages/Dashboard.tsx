@@ -970,28 +970,23 @@ export default function Dashboard() {
     )
   }
 
-  /* ==================== INITIAL LOADING STATE ==================== */
-  if (loading && !metrics) {
-    return (
-      <div className="min-h-[100dvh] bg-memo-bg px-4 md:px-8 pt-6 pb-10">
-        <div className="w-full">
-          {renderHeader()}
-          <div className="flex items-center justify-center py-20">
-            <div className="text-center">
-              <RefreshCw className="w-8 h-8 text-[#8B6F4E] animate-spin mx-auto mb-3" />
-              <p className="text-lg text-memo-text-secondary">Loading health data...</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   /* ==================== NORMAL STATE ==================== */
   return (
     <div className="min-h-[100dvh] bg-memo-bg px-4 md:px-8 pt-6 pb-10">
       <div className="w-full space-y-5">
         {renderHeader()}
+
+        {/* Loading indicator — inline, doesn't block content */}
+        {loading && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex items-center gap-3 px-4 py-3 bg-white rounded-xl shadow-card"
+          >
+            <RefreshCw className="w-5 h-5 text-[#8B6F4E] animate-spin" />
+            <span className="text-sm text-memo-text-secondary">Updating data...</span>
+          </motion.div>
+        )}
 
         {/* Calendar — full width */}
         <motion.div

@@ -90,7 +90,7 @@ export function clearStoredToken(): void {
 
 const PRIMARY_PROXY = "https://corsproxy.io/?"
 const BACKUP_PROXY = "https://api.allorigins.win/raw?url="
-const REQUEST_TIMEOUT_MS = 15000
+const REQUEST_TIMEOUT_MS = 8000
 
 // ── Robust URL builder ───────────────────────────────────────────────
 // Builds Oura API URLs with the access_token embedded as a query param.
@@ -374,45 +374,35 @@ export async function fetchDailyMetrics(
     onStatus?.({ ...status })
   }
 
-  // Sleep
-  const sleepR = await safeFetchWithRetry(`/daily_sleep${dr(date, date)}`, token,
-    (d) => ((d.data || []) as any[]).map(extractSleep), [])
-  update("sleep", sleepR.status)
-
-  // Readiness
-  const readinessR = await safeFetchWithRetry(`/daily_readiness${dr(date, date)}`, token,
-    (d) => ((d.data || []) as any[]).map(extractReadiness), [])
-  update("readiness", readinessR.status)
-
-  // Activity
-  const activityR = await safeFetchWithRetry(`/daily_activity${dr(date, date)}`, token,
-    (d) => ((d.data || []) as any[]).map(extractActivity), [])
-  update("activity", activityR.status)
-
-  // Heart Rate
-  const hrR = await safeFetchWithRetry(`/heartrate${dtr(date, date)}`, token,
-    (d) => (d.data || []) as any[], [])
-  update("heartRate", hrR.status)
-
-  // Workouts
-  const workoutR = await safeFetchWithRetry(`/workout${dr(date, date)}`, token,
-    (d) => ((d.data || []) as any[]).map(extractWorkout), [])
-  update("workout", workoutR.status)
-
-  // SpO2
-  const spo2R = await safeFetchWithRetry(`/daily_spo2${dr(date, date)}`, token,
-    (d) => ((d.data || []) as any[]).map(extractSpO2), [])
-  update("spo2", spo2R.status)
-
-  // Stress
-  const stressR = await safeFetchWithRetry(`/daily_stress${dr(date, date)}`, token,
-    (d) => ((d.data || []) as any[]).map(extractStress), [])
-  update("stress", stressR.status)
-
-  // Resilience
-  const resilienceR = await safeFetchWithRetry(`/daily_resilience${dr(date, date)}`, token,
-    (d) => ((d.data || []) as any[]).map(extractResilience), [])
-  update("resilience", resilienceR.status)
+  // Fetch ALL endpoints in PARALLEL — total time = slowest endpoint only
+  const [
+    sleepR, readinessR, activityR, hrR, workoutR, spo2R, stressR, resilienceR
+  ] = await Promise.all([
+    safeFetchWithRetry(`/daily_sleep${dr(date, date)}`, token,
+      (d) => ((d.data || []) as any[]).map(extractSleep), [])
+      .then(r => { update("sleep", r.status); return r }),
+    safeFetchWithRetry(`/daily_readiness${dr(date, date)}`, token,
+      (d) => ((d.data || []) as any[]).map(extractReadiness), [])
+      .then(r => { update("readiness", r.status); return r }),
+    safeFetchWithRetry(`/daily_activity${dr(date, date)}`, token,
+      (d) => ((d.data || []) as any[]).map(extractActivity), [])
+      .then(r => { update("activity", r.status); return r }),
+    safeFetchWithRetry(`/heartrate${dtr(date, date)}`, token,
+      (d) => (d.data || []) as any[], [])
+      .then(r => { update("heartRate", r.status); return r }),
+    safeFetchWithRetry(`/workout${dr(date, date)}`, token,
+      (d) => ((d.data || []) as any[]).map(extractWorkout), [])
+      .then(r => { update("workout", r.status); return r }),
+    safeFetchWithRetry(`/daily_spo2${dr(date, date)}`, token,
+      (d) => ((d.data || []) as any[]).map(extractSpO2), [])
+      .then(r => { update("spo2", r.status); return r }),
+    safeFetchWithRetry(`/daily_stress${dr(date, date)}`, token,
+      (d) => ((d.data || []) as any[]).map(extractStress), [])
+      .then(r => { update("stress", r.status); return r }),
+    safeFetchWithRetry(`/daily_resilience${dr(date, date)}`, token,
+      (d) => ((d.data || []) as any[]).map(extractResilience), [])
+      .then(r => { update("resilience", r.status); return r }),
+  ])
 
   // Build maps by day
   const sleepMap = new Map<string, ReturnType<typeof extractSleep>>()

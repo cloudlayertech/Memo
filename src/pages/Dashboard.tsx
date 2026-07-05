@@ -499,37 +499,37 @@ export default function Dashboard() {
     const s = metrics?.sleep
     const hasData = s != null
 
-    const sleepScore = s?.score ?? 0
-    const sleepEfficiency = s?.efficiency ?? 0
+    const sleepScore = s?.score
+    const sleepEfficiency = s?.efficiency
     // Oura v2 API provides contributor SCORES (0-100), not raw durations
-    const totalSleepScore = s?.totalSleep ?? 0
-    const deepSleepScore = s?.deepSleep ?? 0
-    const remSleepScore = s?.remSleep ?? 0
-    const hasContributors = totalSleepScore > 0 || deepSleepScore > 0 || remSleepScore > 0
+    const totalSleepScore = s?.totalSleep
+    const deepSleepScore = s?.deepSleep
+    const remSleepScore = s?.remSleep
+    const hasContributors = totalSleepScore != null || deepSleepScore != null || remSleepScore != null
 
-    const sleepQuality = !hasData ? "No data" : sleepScore >= 80 ? "Optimal" : sleepScore >= 60 ? "Moderate" : "Low"
-    const efficiencyQuality = !hasData ? "No data" : sleepEfficiency >= 85 ? "Good" : sleepEfficiency >= 60 ? "Moderate" : "Low"
+    const sleepQuality = !hasData ? "No data" : sleepScore! >= 80 ? "Optimal" : sleepScore! >= 60 ? "Moderate" : "Low"
+    const efficiencyQuality = !hasData ? "No data" : sleepEfficiency! >= 85 ? "Good" : sleepEfficiency! >= 60 ? "Moderate" : "Low"
 
     // Display contributor scores directly (0-100) since v2 API doesn't provide raw durations
-    const deepDisplay = hasContributors ? deepSleepScore : Math.round((sleepScore * 0.18 + sleepEfficiency * 0.05))
-    const remDisplay = hasContributors ? remSleepScore : Math.round((sleepScore * 0.20 + 5))
+    const deepDisplay = hasContributors ? (deepSleepScore ?? 0) : Math.round(((sleepScore ?? 0) * 0.18 + (sleepEfficiency ?? 0) * 0.05))
+    const remDisplay = hasContributors ? (remSleepScore ?? 0) : Math.round(((sleepScore ?? 0) * 0.20 + 5))
 
     const cards = [
       {
         icon: Moon,
         label: "Sleep Score",
-        value: s?.score != null && s.score > 0 ? String(s.score) : "--",
+        value: sleepScore != null ? String(sleepScore) : "--",
         unit: "/ 100",
         description: `${sleepQuality} for memory consolidation`,
       },
       {
         icon: Timer,
         label: "Sleep Efficiency",
-        value: s?.efficiency != null && s.efficiency > 0 ? `${s.efficiency}` : "--",
+        value: sleepEfficiency != null ? `${sleepEfficiency}` : "--",
         unit: "%",
         description: !hasData
           ? "No sleep data available"
-          : `${efficiencyQuality} — ${sleepEfficiency >= 85 ? "restorative sleep pattern" : "more awake time detected, may impact memory"}`,
+          : `${efficiencyQuality} — ${sleepEfficiency! >= 85 ? "restorative sleep pattern" : "more awake time detected, may impact memory"}`,
       },
       {
         icon: Moon,
@@ -583,12 +583,12 @@ export default function Dashboard() {
 
     // Card 1: HRV in ms (estimated from readiness hrvBalance score)
     const hrvBalance = rd?.hrvBalance
-    const hrvMs = hrvBalance != null && hrvBalance > 0
+    const hrvMs = hrvBalance != null
       ? Math.round(hrvBalance * 0.5 + 15)
       : null
     const hrvDesc = !hasAnyData
       ? "No heart data available"
-      : !hrvMs
+      : hrvMs == null
         ? "No HRV data available"
         : hrvBalance! < 60
           ? "Low — stress reduction and deep breathing help"
@@ -597,23 +597,23 @@ export default function Dashboard() {
             : "Good — recovery is on track"
 
     // Card 2: Resting HR from heartRate.resting (primary) or readiness
-    const restingHRValue = hr?.resting ?? rd?.restingHeartRate ?? 0
-    const hasRestingHR = restingHRValue > 0
+    const restingHRValue = hr?.resting ?? rd?.restingHeartRate
+    const hasRestingHR = restingHRValue != null
     const restingHRDisplay = hasRestingHR ? `${restingHRValue}` : "--"
     const restingDesc = !hasAnyData
       ? "No heart data available"
       : !hasRestingHR
         ? "No resting HR data available"
-        : restingHRValue > 80
+        : restingHRValue! > 80
           ? "Elevated — check for stress or dehydration"
-          : restingHRValue >= 60
+          : restingHRValue! >= 60
             ? "Healthy range"
             : "Low — monitor if symptomatic"
 
     // Card 3: Night HR (10 PM – 6 AM) from heartRate.avg
     const nightAvg = hr?.avg ?? hr?.nightAvg
     const nightMin = hr?.nightMin
-    const hasNightHR = nightAvg != null && nightAvg > 0
+    const hasNightHR = nightAvg != null
     const nightHRValue = hasNightHR ? `${nightAvg}` : "--"
     const nightDesc = !hasAnyData
       ? "No heart data available"
@@ -622,15 +622,15 @@ export default function Dashboard() {
         : "No nighttime data available"
 
     // Card 4: HRV Balance (readiness score 0-100)
-    const hasHrvBalance = hrvBalance != null && hrvBalance > 0
+    const hasHrvBalance = hrvBalance != null
     const hrvBalanceValue = hasHrvBalance ? `${hrvBalance}` : "--"
     const hrvBalanceDesc = !hasAnyData
       ? "No heart data available"
       : !hasHrvBalance
         ? "No HRV balance data available"
-        : hrvBalance < 60
+        : hrvBalance! < 60
           ? "Below optimal — prioritize rest and recovery"
-          : hrvBalance < 80
+          : hrvBalance! < 80
             ? "Moderate — adequate recovery"
             : "Optimal — nervous system is well recovered"
 
@@ -693,24 +693,24 @@ export default function Dashboard() {
     const a = metrics?.activity
     const hasData = a != null
     const stepGoal = 8000
-    const steps = a?.steps ?? 0
-    const stepPct = steps > 0 ? Math.min(100, Math.round((steps / stepGoal) * 100)) : 0
-    const inactiveMin = steps > 0 ? Math.max(0, 720 - Math.round(steps / 20)) : 0
+    const steps = a?.steps
+    const stepPct = steps != null ? Math.min(100, Math.round((steps / stepGoal) * 100)) : 0
+    const inactiveMin = steps != null ? Math.max(0, 720 - Math.round(steps / 20)) : null
 
     const cards = [
       {
         icon: Footprints,
         label: "Steps",
-        value: steps != null && steps > 0 ? steps.toLocaleString() : "--",
+        value: steps != null ? steps.toLocaleString() : "--",
         unit: "",
         description: hasData
-          ? `${stepPct > 0 ? stepPct : "--"}% of ${stepGoal.toLocaleString()} goal — Walking protects memory and supports brain blood flow`
+          ? `${stepPct}% of ${stepGoal.toLocaleString()} goal — Walking protects memory and supports brain blood flow`
           : "No activity data available",
       },
       {
         icon: Activity,
         label: "Activity Score",
-        value: a?.score != null && a.score > 0 ? `${a.score}` : "--",
+        value: a?.score != null ? `${a.score}` : "--",
         unit: "/ 100",
         description: !hasData
           ? "No activity data available"
@@ -723,7 +723,7 @@ export default function Dashboard() {
       {
         icon: TrendingUp,
         label: "Active Calories",
-        value: a?.activeCalories != null && a.activeCalories > 0 ? `${a.activeCalories}` : "--",
+        value: a?.activeCalories != null ? `${a.activeCalories}` : "--",
         unit: "cal",
         description: hasData
           ? "Calories burned during activity — fuels brain energy demands"
@@ -732,7 +732,7 @@ export default function Dashboard() {
       {
         icon: TrendingDown,
         label: "Inactive Time",
-        value: inactiveMin > 0 ? `${inactiveMin}` : "--",
+        value: inactiveMin != null ? `${inactiveMin}` : "--",
         unit: "min",
         description: hasData
           ? "Time sitting still — try to move every hour to protect brain circulation"
@@ -771,21 +771,23 @@ export default function Dashboard() {
 
     // Card 1: SpO2 Average
     const spo2Avg = sp?.average
-    const hasSpo2 = spo2Avg != null && spo2Avg > 0
-    const spo2Value = hasSpo2 ? `${spo2Avg}` : "--"
+    const hasSpo2 = spo2Avg != null
+    const spo2Value = hasSpo2 ? (spo2Avg > 0 ? `${spo2Avg}` : "Not collected") : "--"
     const spo2Desc = !hasAnyData
       ? "No blood oxygen data available"
       : !hasSpo2
         ? "SpO2 data not available — ensure Oura Ring is properly positioned"
-        : spo2Avg >= 95
-          ? "Normal — good oxygenation supports brain function"
-          : spo2Avg >= 92
-            ? "Mildly low — monitor for cognitive effects"
-            : "Low — low oxygen affects brain function and may cause confusion"
+        : spo2Avg === 0
+          ? "SpO2 not collected — no readings available for this period"
+          : spo2Avg >= 95
+            ? "Normal — good oxygenation supports brain function"
+            : spo2Avg >= 92
+              ? "Mildly low — monitor for cognitive effects"
+              : "Low — low oxygen affects brain function and may cause confusion"
 
     // Card 2: Breathing Disturbance Index
     const bdi = sp?.breathingDisturbanceIndex
-    const hasBdi = bdi != null && bdi > 0
+    const hasBdi = bdi != null
     const bdiValue = hasBdi ? `${bdi}` : "--"
     const bdiDesc = !hasAnyData
       ? "No breathing disturbance data available"
@@ -799,7 +801,7 @@ export default function Dashboard() {
 
     // Card 3: HRV Balance (from readiness)
     const hrvBalance = rd?.hrvBalance
-    const hasHrvBalance = hrvBalance != null && hrvBalance > 0
+    const hasHrvBalance = hrvBalance != null
     const hrvBalanceValue = hasHrvBalance ? `${hrvBalance}` : "--"
     const hrvBalanceDesc = !hasAnyData
       ? "No data available"
@@ -813,7 +815,7 @@ export default function Dashboard() {
 
     // Card 4: Readiness Score
     const readinessScore = rd?.score
-    const hasReadiness = readinessScore != null && readinessScore > 0
+    const hasReadiness = readinessScore != null
     const readinessValue = hasReadiness ? `${readinessScore}` : "--"
     const readinessDesc = !hasAnyData
       ? "No data available"
@@ -884,21 +886,23 @@ export default function Dashboard() {
     const st = metrics?.stress
     const rd = metrics?.readiness
     const res = metrics?.resilience
-    const hasAnyData = st != null || rd != null
+    const hasAnyData = st != null || rd != null || res != null
 
     // Card 1: Stress Score — uses stress.daySummary (0-100)
     const stressScore = st?.daySummary
-    const hasStress = stressScore != null && stressScore > 0
-    const stressValue = hasStress ? `${stressScore}` : "--"
+    const hasStress = stressScore != null
+    const stressValue = hasStress ? (stressScore > 0 ? `${stressScore}` : "Not collected") : "--"
     const stressDesc = !hasAnyData
       ? "No stress data available"
       : !hasStress
         ? "No stress data available"
-        : stressScore > 70
-          ? "High — chronic stress accelerates memory decline via cortisol damage"
-          : stressScore > 40
-            ? "Moderate — relaxation practices help protect the hippocampus"
-            : "Low — good stress management supports long-term memory health"
+        : stressScore === 0
+          ? "Stress score not collected — insufficient data for this period"
+          : stressScore > 70
+            ? "High — chronic stress accelerates memory decline via cortisol damage"
+            : stressScore > 40
+              ? "Moderate — relaxation practices help protect the hippocampus"
+              : "Low — good stress management supports long-term memory health"
 
     // Card 2: Recovery — stress.recoveryHigh is in SECONDS, convert to hours
     const recoverySeconds = st?.recoveryHigh
@@ -930,17 +934,19 @@ export default function Dashboard() {
 
     // Card 4: Resilience Score — from resilience data
     const resilienceScore = res?.score
-    const hasResilience = resilienceScore != null && resilienceScore > 0
-    const resilienceValue = hasResilience ? `${resilienceScore}` : "--"
+    const hasResilience = resilienceScore != null
+    const resilienceValue = hasResilience ? (resilienceScore > 0 ? `${resilienceScore}` : "Not collected") : "--"
     const resilienceDesc = !hasAnyData
       ? "No resilience data available"
       : !hasResilience
         ? "No resilience data available"
-        : resilienceScore >= 80
-          ? "Strong resilience — good capacity to handle daily stressors"
-          : resilienceScore >= 60
-            ? "Moderate — support recovery with quality sleep"
-            : "Low resilience — prioritize restorative activities"
+        : resilienceScore === 0
+          ? "Resilience score not collected — insufficient data for this period"
+          : resilienceScore >= 80
+            ? "Strong resilience — good capacity to handle daily stressors"
+            : resilienceScore >= 60
+              ? "Moderate — support recovery with quality sleep"
+              : "Low resilience — prioritize restorative activities"
 
     const cards = [
       {

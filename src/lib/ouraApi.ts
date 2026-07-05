@@ -93,7 +93,7 @@ export function clearStoredToken(): void {
 const apiCache = new Map<string, { data: any; timestamp: number }>()
 const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
 
-function getCacheKey(endpoint: string, _date: string): string {
+function getCacheKey(endpoint: string): string {
   return endpoint
 }
 
@@ -114,48 +114,50 @@ function setCached(key: string, data: any): void {
 
 
 // ── Multi-proxy fetch ────────────────────────────────────────────────
-// Try multiple approaches: direct, proxy with header, proxy with token in URL.
-// The token is embedded as access_token query param (Oura supports this).
-// Authorization header is also sent as a fallback for proxies that preserve it.
+// corsproxy.io is the most reliable free CORS proxy.
+// Token is embedded as access_token query param (Oura supports this).
+// Authorization header is intentionally NOT sent — some proxies strip headers.
 async function tryFetch(endpoint: string, token: string): Promise<{ ok: boolean; data?: any; error?: string }> {
-  const url = `${OURA_BASE}${endpoint}`
+  // Build the Oura URL with token in query string (most reliable through proxies)
+  const baseUrl = `${OURA_BASE}${endpoint}`
+  const separator = baseUrl.includes("?") ? "&" : "?"
+  const urlWithToken = `${baseUrl}${separator}access_token=${encodeURIComponent(token)}`
 
-  // Build proxy URLs with token in the query string (Oura supports this)
-  const separator = url.includes("?") ? "&" : "?"
-  const urlWithToken = `${url}${separator}access_token=${token}`
+  // corsproxy.io is the most reliable free CORS proxy
+  const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent(urlWithToken)
 
-  const proxies = [
-    "https://corsproxy.io/?",
-    "https://api.allorigins.win/raw?url=",
-    "https://api.codetabs.com/v1/proxy?quest=",
-  ]
+  try {
+    const res = await fetch(proxyUrl, {
+      method: "GET",
+      credentials: "omit",
+      // Don't send Authorization header — token is in URL
+    })
 
-  // Try each proxy
-  for (const proxy of proxies) {
-    try {
-      const proxyUrl = proxy + encodeURIComponent(urlWithToken)
-      const res = await fetch(proxyUrl, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        credentials: "omit",
-      })
-
-      if (res.ok) {
-        const data = await res.json()
-        return { ok: true, data }
-      }
-      if (res.status === 401) return { ok: false, error: "TOKEN_EXPIRED" }
-      if (res.status === 404) return { ok: true, data: { data: [] } }
-
-      console.warn(`[Memo] Proxy ${proxy}: HTTP ${res.status}`)
-    } catch (e: any) {
-      console.warn(`[Memo] Proxy ${proxy} failed: ${e.message}`)
+    if (res.ok) {
+      const data = await res.json()
+      return { ok: true, data }
     }
+    if (res.status === 401) return { ok: false, error: "TOKEN_EXPIRED" }
+    if (res.status === 404) return { ok: true, data: { data: [] } }
+
+    console.warn(`[Memo] CORS proxy HTTP ${res.status} for ${endpoint}`)
+  } catch (e: any) {
+    console.warn(`[Memo] CORS proxy error for ${endpoint}: ${e.message}`)
   }
 
-  return { ok: false, error: "All proxies failed" }
+  // Fallback: try allorigins.win
+  try {
+    const backupUrl = "https://api.allorigins.win/raw?url=" + encodeURIComponent(urlWithToken)
+    const res = await fetch(backupUrl, { method: "GET", credentials: "omit" })
+    if (res.ok) {
+      const data = await res.json()
+      return { ok: true, data }
+    }
+  } catch (e: any) {
+    console.warn(`[Memo] Backup proxy error for ${endpoint}: ${e.message}`)
+  }
+
+  return { ok: false, error: "CORS proxy failed" }
 }
 
 // ── Safe fetch with cache ────────────────────────────────────────────
@@ -165,7 +167,7 @@ async function safeFetch<T>(
   extract: (data: any) => T,
   fallback: T
 ): Promise<{ data: T; status: string }> {
-  const cacheKey = getCacheKey(endpoint, "")
+  const cacheKey = getCacheKey(endpoint)
   const cached = getCached(cacheKey)
   if (cached) {
     try {
@@ -514,6 +516,32 @@ export async function fetchMonthlyData(token: string, endDate: string): Promise<
 // ── Single endpoint tester ───────────────────────────────────────────
 export async function testEndpoint(token: string, endpoint: string): Promise<any> {
   return await tryFetch(endpoint, token)
+}
+
+// ── Quick endpoint tester (call from browser console for debugging) ──
+export async function testOuraAPI(token: string): Promise<void> {
+  const endpoints = [
+    "/daily_sleep?start_date=2025-07-05&end_date=2025-07-05",
+    "/daily_readiness?start_date=2025-07-05&end_date=2025-07-05",
+    "/daily_activity?start_date=2025-07-05&end_date=2025-07-05",
+    "/heartrate?start_datetime=2025-07-05T00:00:00&end_datetime=2025-07-05T23:59:59",
+    "/daily_spo2?start_date=2025-07-05&end_date=2025-07-05",
+    "/daily_stress?start_date=2025-07-05&end_date=2025-07-05",
+    "/daily_resilience?start_date=2025-07-05&end_date=2025-07-05",
+  ]
+
+  console.log("[Memo] Testing Oura API endpoints...")
+  for (const ep of endpoints) {
+    const result = await tryFetch(ep, token)
+    const name = ep.split("?")[0].split("/").pop()
+    if (result.ok) {
+      const count = result.data?.data?.length ?? 0
+      const firstItem = result.data?.data?.[0]
+      console.log(`[Memo] ${name}: OK (${count} items)`, firstItem ? JSON.stringify(firstItem).slice(0, 200) : "empty")
+    } else {
+      console.log(`[Memo] ${name}: FAILED - ${result.error}`)
+    }
+  }
 }
 
 // ── Full endpoint tester (call from browser console for debugging) ───

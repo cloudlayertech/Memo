@@ -8,12 +8,17 @@ import { getNextDay, toIsoDate } from "./utils"
 const CLIENT_ID = "c64fde91-0fa4-4a71-b8bb-35617aeb408e"
 const OURA_BASE = "https://api.ouraring.com/v2/usercollection"
 
-// Oura OAuth scopes (NOT endpoint names!)
-// "daily" covers: sleep, activity, readiness, spo2, stress, resilience
-// "heartrate" covers: heart rate data
-// "workout" covers: workout data
-// "personal" covers: personal info
-const OURA_SCOPES = ["daily", "heartrate", "workout", "personal"]
+// Oura OAuth scopes from developer console
+// These MUST match the scopes enabled in your Oura app
+const OURA_SCOPES = [
+  "daily",           // Sleep, Activity, Readiness
+  "heartrate",       // Heart rate
+  "workout",         // Workouts
+  "personal",        // Personal info
+  "spo2",            // Blood oxygen
+  "stress",          // Stress levels
+  "email",           // Email
+]
 
 function getRedirectUri(): string {
   return window.location.origin + window.location.pathname
@@ -113,10 +118,13 @@ function fetchWithTimeout(
 // The full Oura URL (including access_token) is wrapped by the proxy via encodeURIComponent.
 // NO Authorization header is sent — the token travels in the URL query param.
 // Returns { ok, data, error } — never throws.
-async function tryFetch(proxyUrl: string): Promise<{ ok: boolean; data?: any; error?: string }> {
-  // No Authorization header — token is already in the URL as access_token
+async function tryFetch(proxyUrl: string, token: string): Promise<{ ok: boolean; data?: any; error?: string }> {
+  // Send Authorization header AND token in URL (Oura supports both)
   const init: RequestInit = {
     method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
     credentials: "omit",
   }
 
@@ -203,7 +211,7 @@ async function safeFetch<T>(
   // Wrap with primary CORS proxy: the entire Oura URL is encoded
   const proxyUrl = PRIMARY_PROXY + encodeURIComponent(ouraUrl)
 
-  const result = await tryFetch(proxyUrl)
+  const result = await tryFetch(proxyUrl, token)
   if (result.ok && result.data) {
     try {
       const extracted = extract(result.data)

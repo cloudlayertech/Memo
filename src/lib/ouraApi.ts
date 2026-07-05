@@ -33,20 +33,34 @@ export function getOuraAuthUrl(): string {
 export function parseOAuthCallback(): OuraToken | null {
   const hash = window.location.hash
   if (!hash || hash.length < 2) return null
-  // HashRouter: hash may be "access_token=xxx&token_type=..." OR "#/access_token=..."
+  // HashRouter format: #/path or #access_token=...
+  // After OAuth redirect, hash is: #access_token=xxx&token_type=bearer...
+  // We need to check if the hash contains an access_token
+
+  // Remove the leading # if present
   const hashContent = hash.startsWith("#/") ? hash.slice(2) : hash.slice(1)
+
+  // Check if this looks like an OAuth callback (has access_token)
+  if (!hashContent.includes("access_token")) return null
+
   const params = new URLSearchParams(hashContent)
   const accessToken = params.get("access_token")
   const expiresIn = params.get("expires_in")
+
   if (!accessToken) return null
+
   // Store token
-  localStorage.setItem(TOKEN_KEY, JSON.stringify({
+  const token: OuraToken = {
     accessToken,
     expiresAt: Date.now() + (Number(expiresIn) || 86400) * 1000,
-  }))
-  // CRITICAL: Redirect to #/ so HashRouter shows the Dashboard
-  window.location.replace(window.location.pathname + "#/")
-  return null // Return null - page will reload
+  }
+  setStoredToken(token)
+
+  // Clear the hash WITHOUT reloading the page
+  // Use replaceState to clean the token from the URL
+  window.history.replaceState({}, document.title, window.location.pathname + "#/")
+
+  return token
 }
 
 const TOKEN_KEY = "memo_oura_token"
@@ -96,30 +110,52 @@ async function tryFetch(proxyUrl: string, token: string): Promise<{ ok: boolean;
     credentials: "omit",
   }
 
+  // Extract endpoint name for logging
+  const ouraUrlMatch = proxyUrl.match(/usercollection\/([^?]+)/)
+  const endpointName = ouraUrlMatch ? ouraUrlMatch[1] : "unknown"
+
   // Try primary proxy
   try {
+    console.log(`[Memo] Fetching ${endpointName}...`)
     const res = await fetchWithTimeout(proxyUrl, init, REQUEST_TIMEOUT_MS)
+    console.log(`[Memo] ${endpointName} status: ${res.status}`)
     if (res.ok) {
       const data = await res.json()
+      const itemCount = data.data?.length ?? 0
+      console.log(`[Memo] ${endpointName}: ${itemCount} items loaded`)
       return { ok: true, data }
     }
-    if (res.status === 401) return { ok: false, error: "TOKEN_EXPIRED" }
-    if (res.status === 404) return { ok: true, data: { data: [] } }
-  } catch {}
+    if (res.status === 401) {
+      console.warn(`[Memo] ${endpointName}: Token expired (401)`)
+      return { ok: false, error: "TOKEN_EXPIRED" }
+    }
+    if (res.status === 404) {
+      console.log(`[Memo] ${endpointName}: No data (404)`)
+      return { ok: true, data: { data: [] } }
+    }
+    console.warn(`[Memo] ${endpointName}: HTTP ${res.status}`)
+  } catch (err: any) {
+    console.warn(`[Memo] ${endpointName}: Primary proxy error - ${err.message || err}`)
+  }
 
   // Try backup proxy
   try {
     const ouraUrl = decodeURIComponent(proxyUrl.slice(PRIMARY_PROXY.length))
     const backupUrl = BACKUP_PROXY + encodeURIComponent(ouraUrl)
+    console.log(`[Memo] ${endpointName}: Trying backup proxy...`)
     const res = await fetchWithTimeout(backupUrl, init, REQUEST_TIMEOUT_MS)
+    console.log(`[Memo] ${endpointName} backup status: ${res.status}`)
     if (res.ok) {
       const data = await res.json()
       return { ok: true, data }
     }
     if (res.status === 401) return { ok: false, error: "TOKEN_EXPIRED" }
     if (res.status === 404) return { ok: true, data: { data: [] } }
-  } catch {}
+  } catch (err: any) {
+    console.warn(`[Memo] ${endpointName}: Backup proxy error - ${err.message || err}`)
+  }
 
+  console.error(`[Memo] ${endpointName}: All proxies failed`)
   return { ok: false, error: "CORS proxy failed" }
 }
 

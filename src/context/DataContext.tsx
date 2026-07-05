@@ -4,7 +4,6 @@ import type { EndpointStatus } from "@/lib/ouraApi"
 import {
   parseOAuthCallback,
   getStoredToken,
-  setStoredToken,
   clearStoredToken,
   fetchDailyMetrics,
   fetchPersonalInfo,
@@ -68,8 +67,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const oauthToken = parseOAuthCallback()
     if (oauthToken) {
-      setStoredToken(oauthToken)
+      // parseOAuthCallback already stored the token in localStorage
       setToken(oauthToken)
+    } else {
+      // Check if we already have a stored token (e.g. from previous session)
+      const stored = getStoredToken()
+      if (stored) setToken(stored)
     }
   }, [])
 
@@ -92,7 +95,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setMetrics(null)
     setError(null)
     setEndpointStatus(null)
-    window.location.reload()
+    // No need to reload — route guards will redirect to /connect
+    // when isAuthenticated becomes false
   }, [])
 
   const selectDate = useCallback((date: string) => {

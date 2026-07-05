@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from "react-router-dom"
+import { NavLink } from "react-router-dom"
 import {
   Activity,
   LayoutDashboard,
@@ -49,23 +49,23 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
               {/* Nav Links */}
               <nav className="flex items-center gap-1">
-                {navItems.map((item) => {
-                  const isActive = location.pathname === item.to
-                  return (
-                    <NavLink
-                      key={item.to}
-                      to={item.to}
-                      className={`relative flex items-center gap-2 px-3.5 md:px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                {navItems.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.to === "/"}
+                    className={({ isActive }) =>
+                      `relative flex items-center gap-2 px-3.5 md:px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
                         isActive
                           ? "bg-[#8B6F4E] text-white shadow-md shadow-[#8B6F4E]/25"
                           : "text-memo-text-secondary hover:bg-[#F5EDE3] hover:text-memo-text"
-                      }`}
-                    >
-                      <item.icon className="w-[18px] h-[18px]" strokeWidth={2} />
-                      <span className="hidden md:inline">{item.label}</span>
-                    </NavLink>
-                  )
-                })}
+                      }`
+                    }
+                  >
+                    <item.icon className="w-[18px] h-[18px]" strokeWidth={2} />
+                    <span className="hidden md:inline">{item.label}</span>
+                  </NavLink>
+                ))}
               </nav>
             </div>
           </motion.header>

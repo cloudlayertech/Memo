@@ -9,12 +9,12 @@ import { RefreshCw } from "lucide-react"
 const categories: { key: RecCategory | "all"; label: string }[] = [
   { key: "all", label: "All" },
   { key: "morning", label: "Morning" },
-  { key: "activities", label: "Activities" },
-  { key: "nutrition", label: "Nutrition" },
-  { key: "social", label: "Social" },
+  { key: "activity", label: "Activities" },
+  { key: "sleep", label: "Sleep" },
+  { key: "heart", label: "Heart" },
   { key: "evening", label: "Evening" },
-  { key: "safety", label: "Safety" },
-  { key: "medical", label: "Medical" },
+  { key: "stress", label: "Stress" },
+  { key: "spo2", label: "SpO2" },
 ]
 
 const severities: { key: Severity | "all"; label: string }[] = [

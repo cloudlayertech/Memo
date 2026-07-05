@@ -152,8 +152,8 @@ function buildPlan(metrics: DailyMetrics | null): PlanSection[] {
 
   // Also pull specific recommendation actions
   const sleepRecs = allRecs.filter((r) => r.category === "morning" || r.category === "evening").slice(0, 2)
-  const exerciseRecs = allRecs.filter((r) => r.category === "activities").slice(0, 2)
-  const heartRecs = allRecs.filter((r) => r.category === "medical" || r.category === "safety").slice(0, 2)
+  const exerciseRecs = allRecs.filter((r) => r.category === "activity").slice(0, 2)
+  const heartRecs = allRecs.filter((r) => r.category === "heart" || r.category === "stress").slice(0, 2)
 
   // Merge recommendation actions into sections
   sleepRecs.forEach((r) => {

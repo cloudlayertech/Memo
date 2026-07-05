@@ -92,6 +92,29 @@ const PRIMARY_PROXY = "https://corsproxy.io/?"
 const BACKUP_PROXY = "https://api.allorigins.win/raw?url="
 const REQUEST_TIMEOUT_MS = 15000
 
+// ── Request deduplication cache ──────────────────────────────────────
+// Module-level cache persists across imports during the session.
+const apiCache = new Map<string, { data: any; timestamp: number }>()
+const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+
+function getCacheKey(endpoint: string, _date: string): string {
+  return endpoint
+}
+
+function getCached(key: string): any | null {
+  const entry = apiCache.get(key)
+  if (!entry) return null
+  if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
+    apiCache.delete(key)
+    return null
+  }
+  return entry.data
+}
+
+function setCached(key: string, data: any): void {
+  apiCache.set(key, { data, timestamp: Date.now() })
+}
+
 async function fetchWithTimeout(url: string, init: RequestInit, ms: number): Promise<Response> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), ms)
@@ -165,12 +188,24 @@ async function safeFetch<T>(
   extract: (data: any) => T,
   fallback: T
 ): Promise<{ data: T; status: string }> {
+  const cacheKey = getCacheKey(endpoint, "")
+  const cached = getCached(cacheKey)
+  if (cached) {
+    try {
+      const extracted = extract(cached)
+      return { data: extracted, status: "cached" }
+    } catch {
+      // Fall through to fetch
+    }
+  }
+
   const separator = endpoint.includes("?") ? "&" : "?"
   const ouraUrl = `${OURA_BASE}${endpoint}${separator}access_token=${token}`
   const proxyUrl = PRIMARY_PROXY + encodeURIComponent(ouraUrl)
   const result = await tryFetch(proxyUrl, token)
   if (result.ok && result.data) {
     try {
+      setCached(cacheKey, result.data)
       const extracted = extract(result.data)
       return { data: extracted, status: "loaded" }
     } catch {
@@ -402,6 +437,36 @@ export async function fetchDailyMetrics(
   return { metrics, status }
 }
 
+// ── Daily metrics cache (prevents re-fetching same day) ──────────────
+const dailyMetricsCache = new Map<string, DailyMetrics>()
+
+export async function fetchDailyMetricsCached(
+  token: string,
+  date: string,
+  onStatus?: (status: EndpointStatus) => void
+): Promise<{ metrics: DailyMetrics; status: EndpointStatus }> {
+  // Check if we already have this day's data cached
+  const cached = dailyMetricsCache.get(date)
+  if (cached) {
+    return {
+      metrics: cached,
+      status: {
+        sleep: "cached",
+        readiness: "cached",
+        activity: "cached",
+        heartRate: "cached",
+        workout: "cached",
+        spo2: "cached",
+        stress: "cached",
+      },
+    }
+  }
+
+  const result = await fetchDailyMetrics(token, date, onStatus)
+  dailyMetricsCache.set(date, result.metrics)
+  return result
+}
+
 export async function fetchPersonalInfo(token: string): Promise<PersonalInfo | null> {
   const result = await safeFetch("/personal_info", token,
     (d) => d as PersonalInfo, null)
@@ -414,7 +479,10 @@ export async function fetchWeeklyData(token: string, endDate: string): Promise<D
   for (let i = 6; i >= 0; i--) {
     dates.push(toIsoDate(subDays(new Date(endDate + "T00:00:00"), i)))
   }
-  const results = await Promise.all(dates.map((d) => fetchDailyMetrics(token, d).then((r) => r.metrics)))
+  // Use cached version — won't re-fetch data we already have
+  const results = await Promise.all(
+    dates.map((d) => fetchDailyMetricsCached(token, d).then((r) => r.metrics))
+  )
   return results
 }
 
@@ -424,6 +492,9 @@ export async function fetchMonthlyData(token: string, endDate: string): Promise<
   for (let i = 29; i >= 0; i--) {
     dates.push(toIsoDate(subDays(new Date(endDate + "T00:00:00"), i)))
   }
-  const results = await Promise.all(dates.map((d) => fetchDailyMetrics(token, d).then((r) => r.metrics)))
+  // Use cached version — won't re-fetch data we already have
+  const results = await Promise.all(
+    dates.map((d) => fetchDailyMetricsCached(token, d).then((r) => r.metrics))
+  )
   return results
 }

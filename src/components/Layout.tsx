@@ -20,7 +20,6 @@ const navItems = [
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useData()
-  const location = useLocation()
 
   return (
     <div className="min-h-[100dvh] bg-memo-bg">

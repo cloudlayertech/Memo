@@ -1,9 +1,10 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect, useCallback } from "react"
 import { motion } from "framer-motion"
 import { Moon, HeartPulse, Footprints, Gauge, Droplets, Wind, Shield, RefreshCw } from "lucide-react"
 import { useData } from "@/context/DataContext"
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts"
-import { fetchWeeklyData, fetchMonthlyData } from "@/lib/ouraApi"
+import { fetchDailyMetricsCached } from "@/lib/ouraApi"
+import { toIsoDate } from "@/lib/utils"
 import type { DailyMetrics } from "@/types/oura"
 
 const chartConfigs = [
@@ -68,35 +69,88 @@ const fadeUp = {
   }),
 }
 
+/** Stagger delay between each day's fetch (ms) */
+const STAGGER_MS = 400
+
 export default function Trends() {
   const { token, selectedDate } = useData()
   const [range, setRange] = useState<7 | 30>(7)
-  const [trendData, setTrendData] = useState<DailyMetrics[] | null>(null)
+  const [trendData, setTrendData] = useState<DailyMetrics[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingText, setLoadingText] = useState("Loading trends...")
 
-  useState(() => {
-    if (!token) return
-    setLoading(true)
-    const fetcher = range === 7 ? fetchWeeklyData : fetchMonthlyData
-    fetcher(token.accessToken, selectedDate)
-      .then(setTrendData)
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  })
+  // Generate date list for the range
+  const getDates = useCallback(async (endDate: string, days: number): Promise<string[]> => {
+    const { subDays } = await import("date-fns")
+    const dates: string[] = []
+    for (let i = days - 1; i >= 0; i--) {
+      dates.push(toIsoDate(subDays(new Date(endDate + "T00:00:00"), i)))
+    }
+    return dates
+  }, [])
 
-  // Fetch data on mount and when range/date changes
-  useMemo(() => {
-    if (!token) return
+  // Incremental data fetch: load one day at a time with staggered delays
+  useEffect(() => {
+    if (!token) {
+      setLoading(false)
+      return
+    }
+
+    let cancelled = false
     setLoading(true)
-    const fetcher = range === 7 ? fetchWeeklyData : fetchMonthlyData
-    fetcher(token.accessToken, selectedDate)
-      .then(setTrendData)
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, [range, selectedDate, token])
+    setTrendData([])
+    setLoadingText("Loading trends...")
+
+    async function loadIncrementally() {
+      const dates = await getDates(selectedDate, range)
+      const results: DailyMetrics[] = new Array(dates.length)
+
+      for (let i = 0; i < dates.length; i++) {
+        if (cancelled) return
+
+        const date = dates[i]
+        setLoadingText(`Loading ${date.slice(5)}... (${i + 1}/${dates.length})`)
+
+        try {
+          const { metrics } = await fetchDailyMetricsCached(token!.accessToken, date)
+          results[i] = metrics
+
+          // Update state with partial data so charts render incrementally
+          if (!cancelled) {
+            const partial = results.filter((r): r is DailyMetrics => r !== undefined)
+            setTrendData([...partial])
+          }
+        } catch (err) {
+          console.warn(`[Trends] Failed to load ${date}:`, err)
+          // Placeholder so the slot isn't empty
+          results[i] = {
+            date,
+            sleep: null, readiness: null, activity: null,
+            heartRate: null, spo2: null, stress: null,
+            resilience: null, workouts: null,
+          }
+        }
+
+        // Stagger next request to avoid overwhelming CORS proxies
+        if (i < dates.length - 1) {
+          await new Promise((res) => setTimeout(res, STAGGER_MS))
+        }
+      }
+
+      if (!cancelled) {
+        setLoading(false)
+        setLoadingText("")
+      }
+    }
+
+    loadIncrementally()
+
+    return () => {
+      cancelled = true
+    }
+  }, [range, selectedDate, token, getDates])
 
   const chartData = useMemo(() => {
-    if (!trendData) return []
     return trendData.map((m: any) => {
       const entry: Record<string, any> = { date: m.date ? m.date.slice(5) : "" }
       chartConfigs.forEach((c) => {
@@ -125,6 +179,8 @@ export default function Trends() {
     }
   }, [chartData, trendData])
 
+  const hasAnyData = trendData.length > 0
+
   return (
     <div className="min-h-[100dvh] bg-memo-bg px-4 md:px-8 pt-6 pb-10">
       <div className="w-full space-y-5">
@@ -152,9 +208,10 @@ export default function Trends() {
             <button
               key={r.value}
               onClick={() => setRange(r.value)}
+              disabled={loading && hasAnyData}
               className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
                 range === r.value ? "bg-[#8B6F4E] text-white shadow-sm" : "text-memo-text-secondary hover:bg-memo-bg"
-              }`}
+              } ${loading && hasAnyData ? "opacity-50 cursor-not-allowed" : ""}`}
             >
               {r.label}
             </button>
@@ -171,6 +228,11 @@ export default function Trends() {
           >
             <h2 className="text-sm font-semibold text-memo-text-secondary uppercase tracking-wider mb-4">
               Averages
+              {loading && hasAnyData && (
+                <span className="ml-2 text-xs text-memo-text-tertiary normal-case">
+                  (updating...)
+                </span>
+              )}
             </h2>
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-4">
               {[
@@ -192,12 +254,12 @@ export default function Trends() {
           </motion.div>
         )}
 
-        {/* Loading or Charts */}
-        {loading ? (
+        {/* Loading state or Charts */}
+        {loading && !hasAnyData ? (
           <div className="flex items-center justify-center py-16">
-            <div className="flex items-center gap-3 text-memo-text-tertiary">
+            <div className="flex flex-col items-center gap-3 text-memo-text-tertiary">
               <RefreshCw className="w-5 h-5 animate-spin" />
-              <span className="text-lg">Loading trends...</span>
+              <span className="text-lg">{loadingText}</span>
             </div>
           </div>
         ) : (
@@ -232,6 +294,9 @@ export default function Trends() {
                   <div className="flex items-center gap-2.5 mb-4">
                     <Icon className="w-5 h-5" style={{ color: cfg.color }} />
                     <h3 className="text-base font-semibold text-memo-text">{cfg.label}</h3>
+                    {loading && hasAnyData && (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-memo-text-tertiary ml-auto" />
+                    )}
                   </div>
                   <div className="h-[200px]">
                     {data.length > 0 ? (
@@ -261,7 +326,7 @@ export default function Trends() {
                       </ResponsiveContainer>
                     ) : (
                       <div className="h-full flex items-center justify-center text-sm text-memo-text-tertiary">
-                        No data available
+                        {loading ? "Loading..." : "No data available"}
                       </div>
                     )}
                   </div>

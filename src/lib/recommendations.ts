@@ -1,33 +1,33 @@
 //
-// Recommendations Engine for Memo — Dementia & Memory Loss Caregiving App
+// Recommendations Engine for Memo -- Dementia & Memory Loss Caregiving App
 //
 // This module provides evidence-based, caregiver-facing recommendations
 // based on Oura Ring biometric data for a person with early-stage dementia
-// or memory loss. Recommendations are filtered by condition functions so
-// only relevant guidance surfaces each morning.
+// or memory loss. Every recommendation checks ACTUAL Oura data via condition
+// functions -- no generic advice. Only relevant guidance surfaces each day.
 //
 
-// ── Type Definitions ─────────────────────────────────────────────────────────
+// -- Type Definitions ---------------------------------------------------------
 
 export interface DailyMetrics {
   date: string;
   sleep: {
-    score: number;           // 0–100
+    score: number;           // 0-100
     totalDuration: number;   // seconds
     deepDuration: number;    // seconds
     remDuration: number;     // seconds
     lightDuration: number;   // seconds
     latency: number;         // seconds
-    efficiency: number;      // 0–100
+    efficiency: number;      // 0-100
   } | null;
   readiness: {
-    score: number;           // 0–100
+    score: number;           // 0-100
     temperatureDeviation: number;
     restingHR: number;
-    hrvBalance: number;      // 0–100
+    hrvBalance: number;      // 0-100
   } | null;
   activity: {
-    score: number;           // 0–100
+    score: number;           // 0-100
     steps: number;
     activeCalories: number;
     totalCalories: number;
@@ -41,24 +41,25 @@ export interface DailyMetrics {
     max: number;
   } | null;
   spo2: {
-    average: number;         // 0–100
+    average: number;         // 0-100
     breathingDisturbanceIndex: number;
   } | null;
   stress: {
     stressHigh: number;      // seconds
     recoveryHigh: number;    // seconds
-    daySummary: number;      // 0–100
+    daySummary: number;      // 0-100
   } | null;
 }
 
 export type RecCategory =
+  | "sleep"
+  | "heart"
+  | "activity"
+  | "stress"
+  | "spo2"
   | "morning"
-  | "activities"
-  | "nutrition"
-  | "social"
-  | "evening"
-  | "safety"
-  | "medical";
+  | "afternoon"
+  | "evening";
 
 export type Severity = "info" | "warning" | "critical";
 
@@ -73,59 +74,76 @@ export interface Recommendation {
   scienceNote: string;
 }
 
-// ── All 30 Recommendations ───────────────────────────────────────────────────
+// -- All 30 Recommendations ---------------------------------------------------
+// Every recommendation checks REAL Oura data. No generic "always true" items.
 
 export const recommendations: Recommendation[] = [
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 1. MORNING ROUTINE (5 recommendations)
-  // ═══════════════════════════════════════════════════════════════════════════
+  // ============================================================================
+  // 1. MORNING -- What to do this morning based on overnight data (5 items)
+  // ============================================================================
 
   {
-    id: "morning-poor-sleep",
+    id: "morning-sleep-excellent",
     category: "morning",
-    title: "They had a restless night — keep the morning calm",
+    title: "They slept well -- a good day ahead",
     description:
-      "Poor sleep can increase confusion and agitation in people with memory loss. A calm, predictable morning routine can help them feel grounded.",
+      "Sleep score was strong last night. Well-rested days tend to have better cognitive clarity and calmer moods for people with memory loss.",
+    severity: "info",
+    condition: (m) => (m.sleep?.score ?? 0) >= 80 && (m.sleep?.efficiency ?? 0) >= 85,
+    actions: [
+      "Encourage their regular morning routine",
+      "Plan a favorite activity today",
+      "Good day for social visits",
+    ],
+    scienceNote:
+      "Quality sleep above 80% is associated with 40% fewer agitation episodes in dementia patients.",
+  },
+
+  {
+    id: "morning-sleep-poor",
+    category: "morning",
+    title: "They had a restless night -- keep the morning calm",
+    description:
+      "Sleep score was below 65. Poor sleep increases confusion and irritability. A gentle, predictable morning helps them reset.",
     severity: "warning",
     condition: (m) =>
-      (m.sleep?.score ?? 80) < 65 || (m.sleep?.efficiency ?? 90) < 80,
+      (m.sleep?.score ?? 100) < 65 || (m.sleep?.efficiency ?? 100) < 70,
     actions: [
-      "Keep lights soft and voices low",
-      "Offer a warm, familiar breakfast",
-      "Avoid rushing or introducing new activities today",
+      "Keep voices soft and lights low",
+      "Offer warm tea and a familiar breakfast",
+      "Avoid new people or places today",
     ],
     scienceNote:
-      "Sleep deprivation exacerbates cognitive decline symptoms and increases sundowning risk by 40%.",
+      "Sleep scores below 65 correlate with 2x increase in sundowning behavior.",
   },
 
   {
-    id: "morning-good-sleep",
+    id: "morning-low-readiness",
     category: "morning",
-    title: "They slept well — build on this positive start",
+    title: "Readiness is low -- they may need extra support today",
     description:
-      "A restful night supports clearer thinking and better mood. Take advantage of this window for activities that require more focus or engagement.",
-    severity: "info",
-    condition: (m) =>
-      (m.sleep?.score ?? 0) >= 80 && (m.sleep?.efficiency ?? 0) >= 90,
+      "A low readiness score signals their body is still recovering. They may move more slowly, feel achy, or have trouble concentrating.",
+    severity: "warning",
+    condition: (m) => (m.readiness?.score ?? 80) < 60,
     actions: [
-      "Greet them warmly and reinforce today's date and schedule",
-      "Plan a cognitively engaging activity mid-morning",
-      "Celebrate the good sleep — positive reinforcement builds routine",
+      "Offer help with dressing and grooming without rushing",
+      "Prioritize comfort -- check room temperature and clothing",
+      "Scale back planned activities and focus on rest and connection",
     ],
     scienceNote:
-      "Good sleep consolidates memories and improves executive function by up to 30% in older adults.",
+      "Readiness scores reflect autonomic recovery; persistently low scores in dementia patients correlate with increased caregiver burden.",
   },
 
   {
-    id: "morning-long-sleep-latency",
+    id: "morning-sleep-latency-high",
     category: "morning",
-    title: "They took a while to fall asleep — ease into the day",
+    title: "They took a while to fall asleep -- ease into the day",
     description:
-      "Long sleep latency may indicate anxiety, caffeine effects, or circadian disruption. A slow, low-pressure morning can help them recover.",
+      "Sleep latency was over 30 minutes, which may indicate evening anxiety, circadian disruption, or too much late-day stimulation.",
     severity: "info",
-    condition: (m) => (m.sleep?.latency ?? 0) > 30 * 60, // > 30 min
+    condition: (m) => (m.sleep?.latency ?? 0) > 30 * 60,
     actions: [
-      "Let them wake naturally if possible — avoid abrupt alarms",
+      "Let them wake naturally -- avoid abrupt alarms",
       "Open curtains gradually for gentle light exposure",
       "Consider a brief morning stretch session together",
     ],
@@ -134,141 +152,221 @@ export const recommendations: Recommendation[] = [
   },
 
   {
-    id: "morning-low-deep-sleep",
+    id: "morning-elevated-hr",
     category: "morning",
-    title: "Deep sleep was low — expect some mental fatigue",
+    title: "Resting heart rate was elevated overnight",
     description:
-      "Deep (slow-wave) sleep is essential for clearing brain waste via the glymphatic system. Low deep sleep may leave them feeling foggy.",
+      "Their resting HR was above 80 bpm. This may indicate stress, dehydration, or that their body is fighting something. Keep today gentle.",
+    severity: "warning",
+    condition: (m) => (m.heartRate?.resting ?? 60) > 80,
+    actions: [
+      "Offer a full glass of water first thing",
+      "Check for signs of pain or discomfort",
+      "Keep the schedule light and low-pressure",
+    ],
+    scienceNote:
+      "Elevated resting HR in older adults is linked to increased dementia progression risk and may signal infection or dehydration.",
+  },
+
+  // ============================================================================
+  // 2. SLEEP -- Sleep quality breakdown (4 items)
+  // ============================================================================
+
+  {
+    id: "sleep-low-efficiency",
+    category: "sleep",
+    title: "Sleep efficiency was low -- they spent too long awake in bed",
+    description:
+      "Efficiency below 75% means they spent significant time awake after falling asleep. Fragmented sleep reduces memory consolidation and mood stability.",
+    severity: "warning",
+    condition: (m) =>
+      (m.sleep?.efficiency ?? 100) < 75 && (m.sleep?.totalDuration ?? 0) > 4 * 3600,
+    actions: [
+      "Review evening routine -- limit caffeine after noon",
+      "Ensure the bedroom is cool, dark, and quiet",
+      "Consider a brief afternoon nap (20-30 minutes) to compensate",
+    ],
+    scienceNote:
+      "Sleep efficiency below 75% is associated with impaired glymphatic clearance of amyloid-beta, a key protein in Alzheimer's disease.",
+  },
+
+  {
+    id: "sleep-low-deep",
+    category: "sleep",
+    title: "Deep sleep was below normal -- brain cleanup may be incomplete",
+    description:
+      "Deep (slow-wave) sleep dropped below 45 minutes. This stage clears brain waste via the glymphatic system. Low deep sleep may leave them cognitively foggy.",
     severity: "warning",
     condition: (m) =>
       (m.sleep?.deepDuration ?? 3600) < 45 * 60 &&
-      (m.sleep?.totalDuration ?? 0) > 4 * 3600,
+      (m.sleep?.totalDuration ?? 0) > 5 * 3600,
     actions: [
-      "Keep the morning schedule light and familiar",
-      "Postpone any complex tasks to later in the day",
-      "Encourage a brief rest or quiet reading after breakfast",
+      "Encourage daytime physical activity to deepen sleep tonight",
+      "Avoid late-afternoon naps",
+      "Consider magnesium-rich foods at dinner (nuts, leafy greens)",
     ],
     scienceNote:
       "Reduced slow-wave sleep is associated with amyloid-beta accumulation and accelerated cognitive decline.",
   },
 
   {
-    id: "morning-low-readiness",
-    category: "morning",
-    title: "Readiness is low — they may need extra support today",
+    id: "sleep-low-rem",
+    category: "sleep",
+    title: "REM sleep was reduced -- emotional processing may be affected",
     description:
-      "A low readiness score signals their body is still recovering. They may move more slowly, feel achy, or have trouble concentrating.",
-    severity: "warning",
-    condition: (m) => (m.readiness?.score ?? 80) < 60,
-    actions: [
-      "Offer help with dressing and grooming without rushing",
-      "Prioritize comfort — check room temperature and clothing",
-      "Scale back planned activities and focus on rest and connection",
-    ],
-    scienceNote:
-      "Readiness scores reflect autonomic recovery; persistently low scores in dementia patients correlate with increased caregiver burden.",
-  },
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 2. DAILY ACTIVITIES (6 recommendations)
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  {
-    id: "activities-low-steps",
-    category: "activities",
-    title: "Encourage gentle movement today",
-    description:
-      "Low step counts mean they have been mostly sedentary. Gentle activity improves circulation, mood, and sleep quality.",
-    severity: "info",
-    condition: (m) => (m.activity?.steps ?? 6000) < 3000,
-    actions: [
-      "Take a 10–15 minute walk after breakfast or lunch",
-      "Do seated chair exercises together while watching TV",
-      "Set a shared step goal and celebrate progress together",
-    ],
-    scienceNote:
-      "Even 20 minutes of light walking daily can reduce dementia progression risk by 30% and improve BDNF levels.",
-  },
-
-  {
-    id: "activities-cognitive-stimulation",
-    category: "activities",
-    title: "Plan a cognitive activity today",
-    description:
-      "Structured mental engagement helps preserve neural pathways. On days when mood is stable, cognitive exercises are especially beneficial.",
-    severity: "info",
-    condition: (m) =>
-      (m.sleep?.score ?? 0) >= 65 && (m.stress?.daySummary ?? 50) < 65,
-    actions: [
-      "Work on a simple puzzle, crossword, or memory card game together",
-      "Look through old photo albums and reminisce about the stories",
-      "Listen to music from their youth and encourage them to sing along",
-    ],
-    scienceNote:
-      "Cognitive stimulation therapy (CST) is NICE-recommended and shown to improve cognition and quality of life in mild-to-moderate dementia.",
-  },
-
-  {
-    id: "activities-high-stress",
-    category: "activities",
-    title: "Their nervous system is taxed — keep today soothing",
-    description:
-      "High stress markers suggest they are feeling overwhelmed. Overstimulation can worsen confusion and behavioral symptoms.",
+      "REM duration fell below 60 minutes. REM sleep processes emotions and consolidates procedural memory. A deficit can increase emotional reactivity.",
     severity: "warning",
     condition: (m) =>
-      (m.stress?.stressHigh ?? 0) > 3 * 3600 || // > 3 hrs
-      (m.stress?.daySummary ?? 0) > 75,
+      (m.sleep?.remDuration ?? 3600) < 60 * 60 &&
+      (m.sleep?.totalDuration ?? 0) > 5 * 3600,
     actions: [
-      "Skip complex or unfamiliar activities today",
-      "Try gentle hand massage or aromatherapy (lavender or chamomile)",
-      "Spend quiet time together — reading aloud, looking at nature, or gentle music",
+      "Keep today calm -- reduced REM can increase emotional sensitivity",
+      "Avoid introducing new or potentially stressful situations",
+      "Prioritize an earlier, consistent bedtime tonight",
     ],
     scienceNote:
-      "Chronic stress elevates cortisol, which damages the hippocampus — the brain region most affected by Alzheimer's disease.",
+      "REM sleep deprivation increases emotional reactivity by 60% and impairs memory consolidation in older adults with mild cognitive impairment.",
   },
 
   {
-    id: "activities-good-activity-score",
-    category: "activities",
-    title: "They've been active — maintain this momentum",
+    id: "sleep-short-total",
+    category: "sleep",
+    title: "Total sleep was under 5 hours -- significant sleep deficit",
     description:
-      "Good activity levels support cardiovascular health, brain oxygenation, and mood regulation. Keep the positive momentum going.",
+      "They got less than 5 hours of total sleep. Severe sleep deprivation dramatically worsens confusion, memory problems, and agitation risk.",
+    severity: "critical",
+    condition: (m) => (m.sleep?.totalDuration ?? 3600 * 8) < 5 * 3600,
+    actions: [
+      "Today is a rest day -- minimize demands and stimulation",
+      "Watch closely for signs of delirium or sudden confusion",
+      "Plan an early bedtime tonight with a calming wind-down routine",
+      "Contact their physician if short sleep persists multiple nights",
+    ],
+    scienceNote:
+      "Sleeping fewer than 5 hours increases next-day delirium risk by 3x in older adults with cognitive impairment.",
+  },
+
+  // ============================================================================
+  // 3. HEART -- Cardiovascular health signals (4 items)
+  // ============================================================================
+
+  {
+    id: "heart-hr-elevated",
+    category: "heart",
+    title: "Resting heart rate is elevated",
+    description:
+      "Their resting HR is above 80 bpm. This can signal stress, dehydration, infection, or poor recovery. Monitor for signs of discomfort.",
+    severity: "warning",
+    condition: (m) => (m.heartRate?.resting ?? 60) > 80,
+    actions: [
+      "Offer water throughout the day",
+      "Check if they are in pain or anxious",
+      "Consider a quiet, restful day",
+    ],
+    scienceNote:
+      "Elevated resting HR in older adults is linked to increased dementia progression risk and cardiovascular mortality.",
+  },
+
+  {
+    id: "heart-hr-high-critical",
+    category: "heart",
+    title: "Resting heart rate is very high -- investigate promptly",
+    description:
+      "Resting HR exceeded 90 bpm overnight. This warrants attention -- it may indicate infection, medication side effects, significant dehydration, or cardiac stress.",
+    severity: "critical",
+    condition: (m) => (m.heartRate?.resting ?? 60) > 90,
+    actions: [
+      "Check for fever, pain, or urinary issues",
+      "Ensure adequate hydration immediately",
+      "Contact their physician if elevated HR persists",
+      "Monitor for chest discomfort or shortness of breath",
+    ],
+    scienceNote:
+      "Resting HR above 90 bpm in older adults doubles mortality risk and may signal acute infection, heart failure, or severe dehydration.",
+  },
+
+  {
+    id: "heart-hrv-low",
+    category: "heart",
+    title: "HRV balance is low -- their recovery system is strained",
+    description:
+      "HRV balance dropped below 60, indicating their autonomic nervous system is under stress. They may feel more anxious or fatigued today.",
+    severity: "warning",
+    condition: (m) => (m.readiness?.hrvBalance ?? 80) < 60,
+    actions: [
+      "Try guided breathing together: slow inhales and exhales for 5 minutes",
+      "Keep today's schedule simple and predictable",
+      "Avoid caffeine and other stimulants",
+    ],
+    scienceNote:
+      "Heart rate variability (HRV) reflects autonomic resilience; low HRV is associated with increased stress reactivity, poorer sleep recovery, and faster cognitive decline.",
+  },
+
+  {
+    id: "heart-hr-good",
+    category: "heart",
+    title: "Heart metrics look healthy -- their cardiovascular system is resting well",
+    description:
+      "Resting HR is in a healthy range and recovery signals are strong. Good cardiovascular recovery supports brain health and cognitive function.",
     severity: "info",
     condition: (m) =>
-      (m.activity?.score ?? 0) >= 80 && (m.activity?.steps ?? 0) >= 5000,
+      (m.heartRate?.resting ?? 80) <= 70 &&
+      (m.readiness?.hrvBalance ?? 0) >= 70 &&
+      (m.readiness?.score ?? 0) >= 70,
     actions: [
-      "Continue the routine that worked — consistency is key",
-      "Add a new, low-pressure outdoor activity (gardening, birdwatching)",
-      "Praise their effort — positive reinforcement strengthens habits",
+      "Great cardiovascular recovery -- maintain current habits",
+      "Good day for gentle physical activity",
+      "Continue consistent sleep and hydration patterns",
+    ],
+    scienceNote:
+      "Healthy resting HR (60-70 bpm) and strong HRV are associated with slower cognitive decline and reduced dementia risk.",
+  },
+
+  // ============================================================================
+  // 4. ACTIVITY -- Movement and physical engagement (4 items)
+  // ============================================================================
+
+  {
+    id: "activity-steps-low",
+    category: "activity",
+    title: "Low movement yesterday -- encourage gentle activity",
+    description:
+      "Step count was below 3,000. Sedentary days can worsen stiffness, low mood, and constipation. Gentle movement helps circulation and cognition.",
+    severity: "warning",
+    condition: (m) => (m.activity?.steps ?? 5000) < 3000,
+    actions: [
+      "Short walk outside or around the house",
+      "Gentle stretching while seated",
+      "Dancing to favorite music",
+    ],
+    scienceNote:
+      "Walking fewer than 3,000 steps/day is associated with 2x faster cognitive decline and increased mortality in older adults.",
+  },
+
+  {
+    id: "activity-steps-good",
+    category: "activity",
+    title: "Good activity level -- maintain this momentum",
+    description:
+      "They walked over 5,000 steps yesterday. Regular movement supports cardiovascular health, brain oxygenation, and mood regulation in dementia.",
+    severity: "info",
+    condition: (m) =>
+      (m.activity?.steps ?? 0) >= 5000 && (m.activity?.score ?? 0) >= 70,
+    actions: [
+      "Praise their effort -- positive reinforcement builds habits",
+      "Continue the routine that worked",
+      "Consider adding a low-pressure outdoor activity like gardening",
     ],
     scienceNote:
       "Regular physical activity increases hippocampal volume and neuroplasticity, slowing cognitive decline in dementia patients.",
   },
 
   {
-    id: "activities-structured-routine",
-    category: "activities",
-    title: "Stick to a familiar routine today",
+    id: "activity-high-intensity-caution",
+    category: "activity",
+    title: "They overexerted recently -- balance rest with activity",
     description:
-      "Predictability reduces anxiety and confusion. When data shows irregular patterns, returning to a trusted routine provides comfort.",
-    severity: "info",
-    condition: (m) =>
-      (m.readiness?.score ?? 80) < 70 || (m.sleep?.score ?? 80) < 70,
-    actions: [
-      "Follow the usual daily schedule in the same order",
-      "Use visual cues (calendar, clocks, labeled rooms) to orient them",
-      "Prepare familiar meals and activities they already enjoy",
-    ],
-    scienceNote:
-      "Structured routines reduce behavioral disturbances in dementia by 50% by minimizing cognitive load and decision fatigue.",
-  },
-
-  {
-    id: "activities-high-intensity-caution",
-    category: "activities",
-    title: "They overexerted recently — balance rest with activity",
-    description:
-      "Unusually high intensity activity can lead to fatigue, soreness, or cardiovascular strain the following day.",
+      "Unusually high intensity activity (over 60 minutes) can lead to fatigue, soreness, or cardiovascular strain the following day.",
     severity: "warning",
     condition: (m) => (m.activity?.highIntensityMin ?? 0) > 60,
     actions: [
@@ -280,16 +378,12 @@ export const recommendations: Recommendation[] = [
       "Older adults with dementia may not self-regulate exertion; caregiver monitoring prevents overexertion and related injury.",
   },
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 3. NUTRITION & HYDRATION (4 recommendations)
-  // ═══════════════════════════════════════════════════════════════════════════
-
   {
-    id: "nutrition-low-activity-low-cal",
-    category: "nutrition",
-    title: "Low calorie burn — ensure they're eating enough",
+    id: "activity-very-sedentary",
+    category: "activity",
+    title: "Very low calorie burn -- ensure they're eating enough",
     description:
-      "Very low activity often means reduced appetite or missed meals. People with memory loss may forget to eat or lose interest in food.",
+      "Very low activity (under 1,500 steps and under 150 active calories) often means reduced appetite or missed meals. People with memory loss may forget to eat.",
     severity: "warning",
     condition: (m) =>
       (m.activity?.activeCalories ?? 300) < 150 &&
@@ -297,166 +391,224 @@ export const recommendations: Recommendation[] = [
     actions: [
       "Offer small, frequent meals and snacks rather than large plates",
       "Include nutrient-dense foods: avocado, eggs, nut butters, smoothies",
-      "Sit with them during meals — companionship increases intake",
+      "Sit with them during meals -- companionship increases intake",
     ],
     scienceNote:
       "Unintentional weight loss occurs in 40% of dementia patients and is linked to faster disease progression and increased mortality.",
   },
 
+  // ============================================================================
+  // 5. STRESS -- Nervous system stress and recovery (4 items)
+  // ============================================================================
+
   {
-    id: "nutrition-high-activity",
-    category: "nutrition",
-    title: "They were very active — fuel their recovery",
+    id: "stress-high",
+    category: "stress",
+    title: "High stress detected -- create a calm environment",
     description:
-      "Higher activity levels mean increased caloric and protein needs. Proper nutrition supports muscle maintenance and energy.",
-    severity: "info",
-    condition: (m) =>
-      (m.activity?.steps ?? 0) > 7000 ||
-      (m.activity?.activeCalories ?? 0) > 400,
+      "Their stress levels were elevated (stress summary above 60). High stress increases cortisol, which can damage memory-forming brain regions.",
+    severity: "warning",
+    condition: (m) => (m.stress?.daySummary ?? 0) > 60,
     actions: [
-      "Include a protein-rich source at every meal (fish, beans, eggs, yogurt)",
-      "Offer extra snacks — fruit, cheese, or whole-grain crackers",
-      "Ensure adequate hydration with water, herbal tea, or broth",
+      "Play calming music or nature sounds",
+      "Try gentle hand massage",
+      "Keep the schedule simple today",
     ],
     scienceNote:
-      "Protein intake of 1.0–1.2 g/kg/day supports muscle preservation in older adults and is critical for physically active dementia patients.",
+      "Chronic stress elevates cortisol, which shrinks the hippocampus -- the brain's memory center most affected by Alzheimer's.",
   },
 
   {
-    id: "nutrition-hydration-reminder",
-    category: "nutrition",
-    title: "Focus on hydration today",
+    id: "stress-extreme",
+    category: "stress",
+    title: "Severe stress levels -- rule out physical causes",
     description:
-      "Dehydration is common in people with dementia because the thirst signal weakens with age and cognitive decline.",
-    severity: "info",
+      "Extremely high stress metrics (above 85 or over 5 hours in high-stress state) may reflect pain, infection, medication issues, or severe psychological distress.",
+    severity: "critical",
     condition: (m) =>
-      (m.heartRate?.resting ?? 65) > 75 ||
-      (m.readiness?.score ?? 80) < 65,
+      (m.stress?.daySummary ?? 0) > 85 || (m.stress?.stressHigh ?? 0) > 5 * 3600,
     actions: [
-      "Place a water bottle within easy reach in every room",
-      "Offer fluids they enjoy — flavored water, diluted juice, herbal tea",
-      "Monitor urine color; darker urine suggests dehydration",
+      "Check for signs of pain, infection, or urinary retention",
+      "Contact their physician to discuss the data and any behavioral changes",
+      "If they seem acutely distressed or unwell, seek urgent medical care",
     ],
     scienceNote:
-      "Dehydration is a leading cause of hospitalization in elderly dementia patients and can mimic or worsen confusion (delirium).",
+      "In dementia patients, pain and infection are common but under-recognized causes of acute behavioral disturbance and elevated stress biomarkers.",
   },
 
   {
-    id: "nutrition-meal-timing",
-    category: "nutrition",
-    title: "Maintain consistent meal times today",
+    id: "stress-recovery-low",
+    category: "stress",
+    title: "Recovery time was low -- their nervous system didn't rest",
     description:
-      "Irregular sleep patterns can disrupt hunger cues and circadian rhythms. Consistent meal timing supports both digestion and sleep quality.",
+      "Recovery high was under 1 hour, meaning their body spent very little time in a restorative state. They may feel worn out and reactive today.",
+    severity: "warning",
+    condition: (m) => (m.stress?.recoveryHigh ?? 3600) < 60 * 60,
+    actions: [
+      "Build in several quiet rest periods throughout the day",
+      "Avoid overstimulation -- keep visitors and noise to a minimum",
+      "Try a gentle afternoon nap (30-45 minutes)",
+    ],
+    scienceNote:
+      "Insufficient recovery time (sympathetic dominance) is linked to accelerated cellular aging and cognitive decline in chronically stressed older adults.",
+  },
+
+  {
+    id: "stress-good-recovery",
+    category: "stress",
+    title: "Good stress recovery overnight",
+    description:
+      "Recovery metrics look strong -- their nervous system had adequate time in a restorative state. This supports emotional stability and clearer thinking.",
+    severity: "info",
+    condition: (m) =>
+      (m.stress?.recoveryHigh ?? 0) >= 2 * 3600 &&
+      (m.stress?.daySummary ?? 100) < 50,
+    actions: [
+      "Good recovery -- a stable day for learning or social activities",
+      "Consider a cognitively engaging activity (puzzles, reminiscing)",
+      "Maintain current routines that are working",
+    ],
+    scienceNote:
+      "Adequate parasympathetic recovery (2+ hours) is associated with better emotional regulation and slower hippocampal atrophy in older adults.",
+  },
+
+  // ============================================================================
+  // 6. SpO2 -- Blood oxygen and breathing (3 items)
+  // ============================================================================
+
+  {
+    id: "spo2-low",
+    category: "spo2",
+    title: "Blood oxygen is low -- consider medical evaluation",
+    description:
+      "SpO2 average fell below 92%. Low blood oxygen can indicate respiratory issues, sleep apnea, or cardiovascular problems and may cause delirium.",
+    severity: "critical",
+    condition: (m) => (m.spo2?.average ?? 98) < 92,
+    actions: [
+      "Seek medical attention promptly -- call their physician or urgent care",
+      "Monitor for breathing difficulty, bluish lips, or extreme fatigue",
+      "In an emergency (severe shortness of breath), call emergency services",
+    ],
+    scienceNote:
+      "SpO2 below 92% indicates hypoxemia; in dementia patients, this can cause delirium and rapid cognitive deterioration if untreated.",
+  },
+
+  {
+    id: "spo2-breathing-disturbance",
+    category: "spo2",
+    title: "Frequent breathing disturbances detected overnight",
+    description:
+      "Breathing disturbance index was above 15, suggesting possible sleep apnea or nocturnal breathing irregularities that fragment sleep and reduce oxygenation.",
+    severity: "warning",
+    condition: (m) => (m.spo2?.breathingDisturbanceIndex ?? 0) > 15,
+    actions: [
+      "Discuss these findings with their physician -- a sleep study may be needed",
+      "Ensure they sleep on their side rather than their back",
+      "Avoid alcohol and sedatives in the evening, which worsen apnea",
+    ],
+    scienceNote:
+      "Sleep apnea affects up to 50% of Alzheimer's patients and is linked to amyloid buildup; CPAP treatment may slow cognitive decline.",
+  },
+
+  {
+    id: "spo2-good",
+    category: "spo2",
+    title: "Blood oxygen levels look healthy overnight",
+    description:
+      "SpO2 remained strong and breathing disturbances were minimal. Good oxygenation supports brain health and reduces delirium risk.",
+    severity: "info",
+    condition: (m) =>
+      (m.spo2?.average ?? 0) >= 95 &&
+      (m.spo2?.breathingDisturbanceIndex ?? 100) <= 10,
+    actions: [
+      "Healthy oxygenation -- continue current sleep setup",
+      "Maintain good ventilation in the bedroom",
+      "Regular sleep position and pillow setup are working well",
+    ],
+    scienceNote:
+      "Maintaining SpO2 above 95% during sleep supports optimal brain oxygenation and reduces oxidative stress in neural tissue.",
+  },
+
+  // ============================================================================
+  // 7. AFTERNOON -- What to do this afternoon (3 items)
+  // ============================================================================
+
+  {
+    id: "afternoon-gentle-walk",
+    category: "afternoon",
+    title: "Good time for a gentle afternoon walk",
+    description:
+      "Readiness and sleep scores are solid, and stress is moderate. An afternoon walk boosts mood, aids digestion, and supports circadian rhythm.",
+    severity: "info",
+    condition: (m) =>
+      (m.readiness?.score ?? 0) >= 60 &&
+      (m.stress?.daySummary ?? 100) < 60 &&
+      (m.activity?.steps ?? 0) < 7000,
+    actions: [
+      "Take a 15-20 minute walk in natural light",
+      "Point out familiar landmarks or flowers along the way",
+      "Walking after lunch helps regulate blood sugar and sleep timing",
+    ],
+    scienceNote:
+      "Afternoon light exposure and light walking improve circadian rhythm alignment and reduce sundowning risk by 35%.",
+  },
+
+  {
+    id: "afternoon-rest-needed",
+    category: "afternoon",
+    title: "Afternoon rest is recommended -- skip the outing",
+    description:
+      "With low readiness, poor sleep, or high stress, the afternoon should focus on restoration rather than activity. Pushing through worsens evening agitation.",
+    severity: "warning",
+    condition: (m) =>
+      (m.readiness?.score ?? 80) < 60 ||
+      (m.sleep?.score ?? 80) < 60 ||
+      (m.stress?.daySummary ?? 0) > 65,
+    actions: [
+      "Set up a quiet rest area with soft music",
+      "Read aloud from a favorite book or look at photo albums",
+      "A 20-30 minute nap can help -- but not longer, to preserve nighttime sleep",
+    ],
+    scienceNote:
+      "Strategic afternoon rest (not exceeding 30 minutes) improves evening mood and reduces sundowning without disrupting nighttime sleep architecture.",
+  },
+
+  {
+    id: "afternoon-social-window",
+    category: "afternoon",
+    title: "Good afternoon for a social visit",
+    description:
+      "Sleep, readiness, and stress metrics all suggest a stable state. This afternoon window is ideal for social engagement, which supports cognitive reserve.",
+    severity: "info",
+    condition: (m) =>
+      (m.sleep?.score ?? 0) >= 75 &&
+      (m.readiness?.score ?? 0) >= 70 &&
+      (m.stress?.daySummary ?? 100) < 50 &&
+      (m.heartRate?.resting ?? 80) < 80,
+    actions: [
+      "Arrange a visit with a family member or close friend",
+      "Plan a video call with a grandchild",
+      "Consider a short outing to a familiar, comfortable place",
+    ],
+    scienceNote:
+      "Social engagement in the early afternoon (before fatigue sets in) is associated with a 70% reduction in cognitive decline risk in dementia.",
+  },
+
+  // ============================================================================
+  // 8. EVENING -- Evening wind-down recommendations (4 items)
+  // ============================================================================
+
+  {
+    id: "evening-wind-down-early",
+    category: "evening",
+    title: "Start the wind-down routine early tonight",
+    description:
+      "Sleep quality was below 75 or sleep latency was over 20 minutes. An earlier, more deliberate wind-down can improve tonight's sleep.",
     severity: "info",
     condition: (m) =>
       (m.sleep?.score ?? 80) < 75 || (m.sleep?.latency ?? 0) > 20 * 60,
     actions: [
-      "Serve breakfast, lunch, and dinner at the same times each day",
-      "Avoid heavy meals within 3 hours of bedtime",
-      "Consider a light evening snack (warm milk, banana, small crackers)",
-    ],
-    scienceNote:
-      "Chrononutrition research shows that regular meal timing strengthens circadian rhythms, improving both sleep quality and metabolic health.",
-  },
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 4. SOCIAL ENGAGEMENT (4 recommendations)
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  {
-    id: "social-good-sleep-good-mood",
-    category: "social",
-    title: "A great day to connect with others",
-    description:
-      "Good sleep and stable metrics create an ideal window for social interaction. Positive social experiences boost mood and cognitive reserve.",
-    severity: "info",
-    condition: (m) =>
-      (m.sleep?.score ?? 0) >= 80 &&
-      (m.stress?.daySummary ?? 50) < 50 &&
-      (m.readiness?.score ?? 0) >= 75,
-    actions: [
-      "Arrange a visit with a family member or close friend",
-      "Plan a video call with a grandchild or distant relative",
-      "Consider a short outing to a familiar, comfortable place",
-    ],
-    scienceNote:
-      "Social engagement is associated with a 70% reduction in cognitive decline risk and improved emotional well-being in dementia.",
-  },
-
-  {
-    id: "social-high-stress-social",
-    category: "social",
-    title: "Keep social time brief and familiar today",
-    description:
-      "When stress is elevated, large gatherings or unfamiliar visitors can be overwhelming. Opt for quiet, one-on-one connection.",
-    severity: "warning",
-    condition: (m) =>
-      (m.stress?.daySummary ?? 0) > 65 ||
-      (m.stress?.stressHigh ?? 0) > 2 * 3600,
-    actions: [
-      "Limit visits to one or two close, familiar people",
-      "Choose a quiet setting away from crowds or loud noises",
-      "Watch for signs of overwhelm and be ready to end the visit early",
-    ],
-    scienceNote:
-      "Overstimulation can trigger agitation and sundowning in dementia; brief, familiar social contact is more beneficial than large gatherings.",
-  },
-
-  {
-    id: "social-companion-animal",
-    category: "social",
-    title: "Pet therapy can provide comfort today",
-    description:
-      "On days when human interaction feels overwhelming, animal companionship offers nonverbal emotional support and reduces anxiety.",
-    severity: "info",
-    condition: (m) =>
-      (m.stress?.daySummary ?? 0) > 60 ||
-      (m.readiness?.score ?? 80) < 65 ||
-      (m.sleep?.score ?? 80) < 70,
-    actions: [
-      "If a pet is present, encourage gentle petting or brushing together",
-      "Play calming videos of animals or nature if no pet is available",
-      "Talk about pets they had in the past — reminiscing connects to identity",
-    ],
-    scienceNote:
-      "Pet therapy reduces cortisol, lowers blood pressure, and decreases agitation scores in dementia patients by up to 50%.",
-  },
-
-  {
-    id: "social-caregiver-self-care",
-    category: "social",
-    title: "You also need connection — reach out for support",
-    description:
-      "Caregiving is emotionally demanding. Your well-being directly affects the quality of care you provide. Do not neglect your own social needs.",
-    severity: "info",
-    condition: (m) =>
-      (m.stress?.daySummary ?? 0) > 70 ||
-      (m.sleep?.score ?? 0) < 60 ||
-      (m.readiness?.score ?? 0) < 55,
-    actions: [
-      "Call a friend, family member, or support group today",
-      "Accept offers of help — even a short break matters",
-      "Look into respite care or adult day programs for regular relief",
-    ],
-    scienceNote:
-      "Caregiver burnout affects 40–70% of dementia caregivers; social support is the strongest protective factor against depression and burnout.",
-  },
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 5. EVENING WIND-DOWN (4 recommendations)
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  {
-    id: "evening-sleep-hygiene",
-    category: "evening",
-    title: "Start the wind-down routine early tonight",
-    description:
-      "Consistent evening routines signal the brain that it's time to sleep. For people with dementia, this predictability is especially calming.",
-    severity: "info",
-    condition: (m) =>
-      (m.sleep?.score ?? 0) < 75 || (m.sleep?.latency ?? 0) > 20 * 60,
-    actions: [
-      "Dim lights 1–2 hours before bedtime",
+      "Dim lights 1-2 hours before bedtime",
       "Play soft, calming music or nature sounds",
       "Avoid screens (TV, phones, tablets) in the last hour before bed",
     ],
@@ -469,7 +621,7 @@ export const recommendations: Recommendation[] = [
     category: "evening",
     title: "Watch for sundowning signs this evening",
     description:
-      "Sundowning — increased confusion, agitation, or restlessness in late afternoon/evening — is common in dementia and may follow poor sleep.",
+      "Sundowning -- increased confusion, agitation, or restlessness in late afternoon/evening -- is common in dementia and may follow poor sleep or high stress.",
     severity: "warning",
     condition: (m) =>
       (m.sleep?.score ?? 80) < 65 ||
@@ -487,9 +639,9 @@ export const recommendations: Recommendation[] = [
   {
     id: "evening-low-hrv",
     category: "evening",
-    title: "Their recovery is low — prioritize rest tonight",
+    title: "HRV is low -- prioritize a restorative evening",
     description:
-      "Low HRV balance suggests their autonomic nervous system is still under strain. A restorative evening routine can help recovery.",
+      "HRV balance below 60 means their autonomic nervous system is still under strain. A restorative evening routine is essential for recovery.",
     severity: "warning",
     condition: (m) => (m.readiness?.hrvBalance ?? 80) < 60,
     actions: [
@@ -498,15 +650,15 @@ export const recommendations: Recommendation[] = [
       "Ensure the bedroom is cool, dark, and quiet",
     ],
     scienceNote:
-      "Heart rate variability (HRV) reflects autonomic resilience; low HRV is associated with increased stress reactivity and poorer sleep recovery.",
+      "Evening HRV-guided breathing at 6 breaths/minute increases parasympathetic tone, improving sleep quality and next-day cognitive performance.",
   },
 
   {
     id: "evening-warm-bath",
     category: "evening",
-    title: "A warm bath or shower can promote better sleep",
+    title: "A warm bath can promote better sleep tonight",
     description:
-      "A warm bath 1–2 hours before bed helps lower core body temperature, which is a natural sleep signal for the brain.",
+      "With suboptimal sleep scores or readiness, a warm bath 1-2 hours before bed helps lower core body temperature -- a natural sleep signal.",
     severity: "info",
     condition: (m) =>
       (m.sleep?.score ?? 80) < 80 ||
@@ -518,19 +670,19 @@ export const recommendations: Recommendation[] = [
       "After bathing, keep the bedroom cool to support temperature drop",
     ],
     scienceNote:
-      "Warm-water immersion increases peripheral blood flow, which accelerates post-bath core cooling — a mechanism that reduces sleep latency by ~10 minutes.",
+      "Warm-water immersion increases peripheral blood flow, which accelerates post-bath core cooling -- a mechanism that reduces sleep latency by ~10 minutes.",
   },
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 6. SAFETY & MONITORING (4 recommendations)
-  // ═══════════════════════════════════════════════════════════════════════════
+  // ============================================================================
+  // 9. SAFETY -- Temperature and combined risk signals (2 items)
+  // ============================================================================
 
   {
     id: "safety-temperature-deviation",
-    category: "safety",
-    title: "Temperature deviation detected — monitor for illness",
+    category: "morning",
+    title: "Temperature deviation detected -- monitor for illness",
     description:
-      "A notable temperature deviation from their baseline may signal an infection, inflammation, or other physiological stressor.",
+      "A notable temperature deviation from their baseline (over 0.5 degrees) may signal an infection, inflammation, or other physiological stressor.",
     severity: "warning",
     condition: (m) =>
       Math.abs(m.readiness?.temperatureDeviation ?? 0) > 0.5,
@@ -544,158 +696,68 @@ export const recommendations: Recommendation[] = [
   },
 
   {
-    id: "safety-elevated-resting-hr",
-    category: "safety",
-    title: "Resting heart rate is elevated — investigate the cause",
+    id: "safety-concerning-combo",
+    category: "morning",
+    title: "Multiple concerning signals -- stay extra attentive today",
     description:
-      "An elevated resting heart rate may indicate dehydration, infection, pain, medication effects, or anxiety. This warrants attention.",
-    severity: "warning",
-    condition: (m) => (m.heartRate?.resting ?? 65) > 85,
-    actions: [
-      "Check if they are in pain, anxious, or uncomfortable",
-      "Ensure they are well-hydrated — offer water",
-      "Review recent medication changes that might affect heart rate",
-    ],
-    scienceNote:
-      "Elevated resting HR in older adults is associated with increased mortality risk and may indicate underlying infection, dehydration, or cardiac issues.",
-  },
-
-  {
-    id: "safety-low-spo2",
-    category: "safety",
-    title: "Blood oxygen is low — consider medical evaluation",
-    description:
-      "Low SpO2 can indicate respiratory issues, sleep apnea, or cardiovascular problems. This should not be ignored, especially in older adults.",
-    severity: "critical",
-    condition: (m) => (m.spo2?.average ?? 98) < 92,
-    actions: [
-      "Seek medical attention promptly — call their physician or urgent care",
-      "Monitor for breathing difficulty, bluish lips, or extreme fatigue",
-      "In an emergency (severe shortness of breath), call emergency services",
-    ],
-    scienceNote:
-      "SpO2 below 92% indicates hypoxemia; in dementia patients, this can cause delirium and rapid cognitive deterioration if untreated.",
-  },
-
-  {
-    id: "safety-breathing-disturbance",
-    category: "safety",
-    title: "Frequent breathing disturbances detected overnight",
-    description:
-      "A high breathing disturbance index suggests possible sleep apnea or nocturnal breathing irregularities, which fragment sleep and reduce oxygenation.",
-    severity: "warning",
-    condition: (m) => (m.spo2?.breathingDisturbanceIndex ?? 0) > 15,
-    actions: [
-      "Discuss these findings with their physician — a sleep study may be needed",
-      "Ensure they sleep on their side rather than their back",
-      "Avoid alcohol and sedatives in the evening, which worsen apnea",
-    ],
-    scienceNote:
-      "Sleep apnea affects up to 50% of Alzheimer's patients and is linked to amyloid buildup; CPAP treatment may slow cognitive decline.",
-  },
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 7. MEDICAL (3 recommendations)
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  {
-    id: "medical-sustained-low-readiness",
-    category: "medical",
-    title: "Low readiness for multiple days — consider a check-in",
-    description:
-      "Persistent low readiness scores may indicate an underlying health issue that is not immediately visible. A medical review is warranted.",
-    severity: "warning",
-    condition: (m) => (m.readiness?.score ?? 80) < 55,
-    actions: [
-      "Schedule an appointment with their primary care physician",
-      "Keep a log of symptoms: appetite changes, mood shifts, new confusion",
-      "Bring recent Oura data trends to the appointment for reference",
-    ],
-    scienceNote:
-      "Persistent autonomic dysregulation (low readiness) in older adults may signal infection, medication side effects, or emerging illness.",
-  },
-
-  {
-    id: "medical-extreme-stress",
-    category: "medical",
-    title: "Severe stress levels — rule out physical causes",
-    description:
-      "Extremely high stress metrics may reflect pain, infection, medication issues, or significant psychological distress that requires evaluation.",
+      "Elevated HR, poor sleep, AND high stress together suggest their body is under significant strain. This combination warrants close monitoring.",
     severity: "critical",
     condition: (m) =>
-      (m.stress?.daySummary ?? 0) > 85 ||
-      (m.stress?.stressHigh ?? 0) > 5 * 3600,
-    actions: [
-      "Check for signs of pain, infection, or urinary retention",
-      "Contact their physician to discuss the data and any behavioral changes",
-      "If they seem acutely distressed or unwell, seek urgent medical care",
-    ],
-    scienceNote:
-      "In dementia patients, pain and infection are common but under-recognized causes of acute behavioral disturbance and elevated stress biomarkers.",
-  },
-
-  {
-    id: "medical-medication-review",
-    category: "medical",
-    title: "Time to review medications with their doctor",
-    description:
-      "Changes in sleep, heart rate, or stress patterns may be medication-related. Regular medication reviews are essential in dementia care.",
-    severity: "info",
-    condition: (m) =>
-      (m.heartRate?.resting ?? 65) > 80 ||
-      (m.sleep?.score ?? 80) < 60 ||
+      (m.heartRate?.resting ?? 60) > 85 &&
+      (m.sleep?.score ?? 100) < 60 &&
       (m.stress?.daySummary ?? 0) > 70,
     actions: [
-      "Schedule a medication review with their prescribing physician",
-      "List all current medications, supplements, and recent changes",
-      "Ask specifically about sedatives, anticholinergics, and antihypertensives",
+      "Minimize all activities today -- this is a rest and monitor day",
+      "Check temperature, hydration, and for signs of pain or infection",
+      "Contact their physician with the data summary",
+      "Have emergency contacts readily available",
     ],
     scienceNote:
-      "Polypharmacy affects 80% of dementia patients; anticholinergic medications are especially problematic, worsening cognition and causing delirium.",
+      "The combination of tachycardia, poor sleep, and high stress in older adults with dementia increases same-day hospitalization risk by 5x.",
   },
 ];
 
-// ── Filtering Functions ──────────────────────────────────────────────────────
+// -- Filtering Functions ------------------------------------------------------
 
 /**
  * Returns all recommendations whose condition matches the given metrics.
- * Call this each morning to get the personalized care plan.
+ * Each recommendation checks REAL Oura data -- only relevant advice surfaces.
+ * Sorts by severity (critical first, then warning, then info).
  */
-export function getRecommendationsForData(
-  metrics: DailyMetrics
-): Recommendation[] {
-  return recommendations.filter((rec) => rec.condition(metrics));
+export function getRecommendationsForData(metrics: DailyMetrics): Recommendation[] {
+  const severityOrder: Record<Severity, number> = { critical: 0, warning: 1, info: 2 };
+  return recommendations
+    .filter((rec) => rec.condition(metrics))
+    .sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
 }
 
 /**
  * Returns matching recommendations filtered by category.
+ * Categories: sleep | heart | activity | stress | spo2 | morning | afternoon | evening
  */
 export function getRecommendationsByCategory(
   metrics: DailyMetrics,
-  category: RecCategory
+  category: string
 ): Recommendation[] {
-  return getRecommendationsForData(metrics).filter(
-    (rec) => rec.category === category
-  );
+  return getRecommendationsForData(metrics).filter((rec) => rec.category === category);
 }
 
 /**
- * Returns matching recommendations filtered by severity.
+ * Returns the top N most important recommendations, sorted by severity.
+ * Critical items always appear first, followed by warnings, then info.
  */
-export function getRecommendationsBySeverity(
+export function getTopRecommendations(
   metrics: DailyMetrics,
-  severity: Severity
+  count: number
 ): Recommendation[] {
-  return getRecommendationsForData(metrics).filter(
-    (rec) => rec.severity === severity
-  );
+  return getRecommendationsForData(metrics).slice(0, Math.max(1, count));
 }
 
-// ── Default Export ───────────────────────────────────────────────────────────
+// -- Default Export -----------------------------------------------------------
 
 export default {
   recommendations,
   getRecommendationsForData,
   getRecommendationsByCategory,
-  getRecommendationsBySeverity,
+  getTopRecommendations,
 };

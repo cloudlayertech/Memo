@@ -27,7 +27,8 @@ function getRedirectUri(): string {
 
 export function getOuraAuthUrl(): string {
   const redirect = encodeURIComponent(getRedirectUri())
-  const scope = OURA_SCOPES.join("+")
+  // Use %20 (URL-encoded space) so Oura receives properly space-separated scopes
+  const scope = OURA_SCOPES.join("%20")
   return `https://cloud.ouraring.com/oauth/authorize?client_id=${CLIENT_ID}&redirect_uri=${redirect}&response_type=token&scope=${scope}`
 }
 
@@ -72,17 +73,17 @@ export function clearStoredToken(): void {
 
 // === CORS Proxy Strategy ===
 // GitHub Pages is static hosting and Oura's API blocks cross-origin requests.
-// We ALWAYS route requests through a CORS proxy that forwards headers.
-// Primary:  allorigins.win  (fast, reliable, forwards headers)
-// Backup:   corsproxy.io   (fallback if primary fails)
+// We ALWAYS route requests through a CORS proxy.
+// Primary:  corsproxy.io    (reliable, supports URL-encoded full URLs)
+// Backup:   allorigins.win  (fallback if primary fails)
+//
+// CRITICAL: We pass the access_token in the URL query parameter instead of
+// the Authorization header. CORS proxies often strip custom headers like
+// Authorization, but forwarding URL query params is always safe.
 
-const PRIMARY_PROXY = "https://api.allorigins.win/raw?url="
-const BACKUP_PROXY = "https://corsproxy.io/?"
+const PRIMARY_PROXY = "https://corsproxy.io/?"
+const BACKUP_PROXY = "https://api.allorigins.win/raw?url="
 const REQUEST_TIMEOUT_MS = 15000
-
-function buildProxyUrl(proxyBase: string, targetUrl: string): string {
-  return proxyBase + encodeURIComponent(targetUrl)
-}
 
 function isGitHubPages(): boolean {
   return typeof window !== "undefined" && window.location.hostname.includes("github.io")
@@ -112,85 +113,85 @@ function fetchWithTimeout(
 }
 
 // Core fetch through CORS proxy.
-// Always uses the proxy (no direct fetch attempt).
+// The full Oura URL (including access_token) is wrapped by the proxy via encodeURIComponent.
+// NO Authorization header is sent — the token travels in the URL query param.
 // Returns { ok, data, error } — never throws.
-async function tryFetch(url: string, token: string): Promise<{ ok: boolean; data?: any; error?: string }> {
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
+async function tryFetch(proxyUrl: string): Promise<{ ok: boolean; data?: any; error?: string }> {
+  // No Authorization header — token is already in the URL as access_token
+  const init: RequestInit = {
+    method: "GET",
+    credentials: "omit",
   }
 
-  const credentials: RequestCredentials = "omit"
+  console.log(`[Memo] ${isGitHubPages() ? "GitHub Pages" : "local"} - fetching via proxy`)
 
-  console.log(`[Memo] ${isGitHubPages() ? "GitHub Pages" : "local"} - fetching via proxy: ${url}`)
-
-  // --- Try primary proxy (allorigins) ---
+  // --- Try primary proxy (corsproxy.io) ---
   try {
-    const proxyUrl = buildProxyUrl(PRIMARY_PROXY, url)
-    const res = await fetchWithTimeout(
-      proxyUrl,
-      { method: "GET", headers, credentials },
-      REQUEST_TIMEOUT_MS
-    )
+    const res = await fetchWithTimeout(proxyUrl, init, REQUEST_TIMEOUT_MS)
 
     if (res.ok) {
       const data = await res.json()
-      console.log(`[Memo] Primary proxy OK: ${url}`)
+      console.log(`[Memo] Primary proxy OK`)
       return { ok: true, data }
     }
 
     // 401 Unauthorized -> token expired
     if (res.status === 401) {
-      console.warn(`[Memo] 401 from Oura API - token expired: ${url}`)
+      console.warn(`[Memo] 401 from Oura API - token expired`)
       return { ok: false, error: "TOKEN_EXPIRED" }
     }
 
     // 404 Not Found -> no data for that day (treat as success with empty data)
     if (res.status === 404) {
-      console.log(`[Memo] 404 from Oura API - no data for this day: ${url}`)
+      console.log(`[Memo] 404 from Oura API - no data for this day`)
       return { ok: true, data: { data: [] } }
     }
 
     // Other HTTP errors -> log and try backup proxy
-    console.warn(`[Memo] Primary proxy HTTP ${res.status}: ${url}`)
+    console.warn(`[Memo] Primary proxy HTTP ${res.status}`)
   } catch (err: any) {
-    console.warn(`[Memo] Primary proxy failed (${err?.message || "network error"}), trying backup: ${url}`)
+    console.warn(`[Memo] Primary proxy failed (${err?.message || "network error"}), trying backup`)
   }
 
-  // --- Try backup proxy (corsproxy.io) ---
+  // --- Try backup proxy (allorigins.win) ---
+  // Convert to allorigins format: BACKUP_PROXY + encodeURIComponent(ouraUrl)
+  // The proxyUrl is PRIMARY_PROXY + encodeURIComponent(ouraUrl), so we need to
+  // extract the Oura URL and re-wrap with the backup proxy.
   try {
-    const proxyUrl = buildProxyUrl(BACKUP_PROXY, url)
-    const res = await fetchWithTimeout(
-      proxyUrl,
-      { method: "GET", headers, credentials },
-      REQUEST_TIMEOUT_MS
-    )
+    // Extract the Oura URL from the primary proxy URL
+    // PRIMARY_PROXY = "https://corsproxy.io/?"
+    const ouraUrl = decodeURIComponent(proxyUrl.slice(PRIMARY_PROXY.length))
+    const backupUrl = BACKUP_PROXY + encodeURIComponent(ouraUrl)
+
+    const res = await fetchWithTimeout(backupUrl, init, REQUEST_TIMEOUT_MS)
 
     if (res.ok) {
       const data = await res.json()
-      console.log(`[Memo] Backup proxy OK: ${url}`)
+      console.log(`[Memo] Backup proxy OK`)
       return { ok: true, data }
     }
 
     if (res.status === 401) {
-      console.warn(`[Memo] 401 from Oura API (backup) - token expired: ${url}`)
+      console.warn(`[Memo] 401 from Oura API (backup) - token expired`)
       return { ok: false, error: "TOKEN_EXPIRED" }
     }
 
     if (res.status === 404) {
-      console.log(`[Memo] 404 from Oura API (backup) - no data for this day: ${url}`)
+      console.log(`[Memo] 404 from Oura API (backup) - no data for this day`)
       return { ok: true, data: { data: [] } }
     }
 
-    console.warn(`[Memo] Backup proxy HTTP ${res.status}: ${url}`)
+    console.warn(`[Memo] Backup proxy HTTP ${res.status}`)
     return { ok: false, error: `HTTP ${res.status} from Oura API via backup proxy` }
   } catch (err: any) {
-    console.error(`[Memo] Backup proxy also failed (${err?.message || "network error"}): ${url}`)
+    console.error(`[Memo] Backup proxy also failed (${err?.message || "network error"})`)
     return { ok: false, error: `All CORS proxies failed (${err?.message || "network error"}). Direct API calls are blocked on GitHub Pages.` }
   }
 }
 
-// Safe fetch wrapper - returns empty/default on failure, never throws
+// Safe fetch wrapper - catches errors per-endpoint, never throws.
+// Builds the Oura URL with access_token in the query string, wraps with proxy.
+// Returns { data, status } where status is "loaded" or an error message.
 async function safeFetch<T>(
   _name: string,
   endpoint: string,
@@ -198,7 +199,14 @@ async function safeFetch<T>(
   extract: (data: any) => T,
   fallback: T
 ): Promise<{ data: T; status: string }> {
-  const result = await tryFetch(`${OURA_BASE}${endpoint}`, token)
+  // Build the full Oura URL with the access_token appended as query param
+  const separator = endpoint.includes("?") ? "&" : "?"
+  const ouraUrl = `${OURA_BASE}${endpoint}${separator}access_token=${token}`
+
+  // Wrap with primary CORS proxy: the entire Oura URL is encoded
+  const proxyUrl = PRIMARY_PROXY + encodeURIComponent(ouraUrl)
+
+  const result = await tryFetch(proxyUrl)
   if (result.ok && result.data) {
     try {
       const extracted = extract(result.data)
@@ -270,7 +278,8 @@ export async function fetchDailyMetrics(
     onStatus?.({ ...status })
   }
 
-  // Fetch all endpoints independently
+  // Fetch endpoints sequentially (not Promise.all) so each gets its own proxy request.
+  // This is more reliable through CORS proxies than parallel requests.
   const sleepResult = await safeFetch(
     "sleep", `/daily_sleep${dateRange(start, end)}`, token,
     (d) => (d.data || []) as SleepDayData[], []

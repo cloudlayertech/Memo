@@ -284,7 +284,7 @@ export default function Dashboard() {
         {cat === "activity" && metrics?.activity && (
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: "Steps", value: metrics.activity.steps.toLocaleString() },
+              { label: "Steps", value: metrics.activity?.steps?.toLocaleString() ?? "--" },
               { label: "Active Calories", value: `${metrics.activity.activeCalories} cal` },
               { label: "Total Calories", value: `${metrics.activity.totalCalories} cal` },
               { label: "Distance", value: `${(metrics.activity.distance / 1000).toFixed(1)} km` },
@@ -772,7 +772,7 @@ export default function Dashboard() {
     // Card 1: SpO2 Average
     const spo2Avg = sp?.average
     const hasSpo2 = spo2Avg != null
-    const spo2Value = hasSpo2 ? (spo2Avg > 0 ? `${spo2Avg}` : "Not collected") : "--"
+    const spo2Value = hasSpo2 ? `${spo2Avg}` : "--"
     const spo2Desc = !hasAnyData
       ? "No blood oxygen data available"
       : !hasSpo2
@@ -891,7 +891,7 @@ export default function Dashboard() {
     // Card 1: Stress Score — uses stress.daySummary (0-100)
     const stressScore = st?.daySummary
     const hasStress = stressScore != null
-    const stressValue = hasStress ? (stressScore > 0 ? `${stressScore}` : "Not collected") : "--"
+    const stressValue = hasStress ? `${stressScore}` : "--"
     const stressDesc = !hasAnyData
       ? "No stress data available"
       : !hasStress
@@ -935,7 +935,7 @@ export default function Dashboard() {
     // Card 4: Resilience Score — from resilience data
     const resilienceScore = res?.score
     const hasResilience = resilienceScore != null
-    const resilienceValue = hasResilience ? (resilienceScore > 0 ? `${resilienceScore}` : "Not collected") : "--"
+    const resilienceValue = hasResilience ? `${resilienceScore}` : "--"
     const resilienceDesc = !hasAnyData
       ? "No resilience data available"
       : !hasResilience

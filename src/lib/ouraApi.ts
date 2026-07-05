@@ -71,62 +71,123 @@ export function clearStoredToken(): void {
 }
 
 // === CORS Proxy Strategy ===
-// GitHub Pages blocks cross-origin requests. We use a proxy to forward them.
-// The proxy URL is: proxy + encodeURIComponent(targetUrl)
-// The proxy forwards ALL headers including Authorization.
+// GitHub Pages is static hosting and Oura's API blocks cross-origin requests.
+// We ALWAYS route requests through a CORS proxy that forwards headers.
+// Primary:  allorigins.win  (fast, reliable, forwards headers)
+// Backup:   corsproxy.io   (fallback if primary fails)
 
-const CORS_PROXIES = [
-  "https://corsproxy.io/?",
-  "https://api.allorigins.win/raw?url=",
-  "https://api.codetabs.com/v1/proxy?quest=",
-]
+const PRIMARY_PROXY = "https://api.allorigins.win/raw?url="
+const BACKUP_PROXY = "https://corsproxy.io/?"
+const REQUEST_TIMEOUT_MS = 15000
 
-// Proxy index tracking removed - unused
-
-function getProxyUrl(targetUrl: string, proxyIndex: number): string {
-  return CORS_PROXIES[proxyIndex] + encodeURIComponent(targetUrl)
+function buildProxyUrl(proxyBase: string, targetUrl: string): string {
+  return proxyBase + encodeURIComponent(targetUrl)
 }
 
-// Try fetching through proxies. Returns { ok, data, error }
+function isGitHubPages(): boolean {
+  return typeof window !== "undefined" && window.location.hostname.includes("github.io")
+}
+
+// Fetch with timeout. Rejects if the request takes longer than timeoutMs.
+function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Request timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+
+    fetch(url, init)
+      .then((res) => {
+        clearTimeout(timer)
+        resolve(res)
+      })
+      .catch((err) => {
+        clearTimeout(timer)
+        reject(err)
+      })
+  })
+}
+
+// Core fetch through CORS proxy.
+// Always uses the proxy (no direct fetch attempt).
+// Returns { ok, data, error } — never throws.
 async function tryFetch(url: string, token: string): Promise<{ ok: boolean; data?: any; error?: string }> {
   const headers = {
     Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
   }
 
-  // Try direct first (works on localhost, some networks)
+  const credentials: RequestCredentials = "omit"
+
+  console.log(`[Memo] ${isGitHubPages() ? "GitHub Pages" : "local"} - fetching via proxy: ${url}`)
+
+  // --- Try primary proxy (allorigins) ---
   try {
-    const res = await fetch(url, { method: "GET", headers, credentials: "omit" as RequestCredentials })
+    const proxyUrl = buildProxyUrl(PRIMARY_PROXY, url)
+    const res = await fetchWithTimeout(
+      proxyUrl,
+      { method: "GET", headers, credentials },
+      REQUEST_TIMEOUT_MS
+    )
+
     if (res.ok) {
       const data = await res.json()
+      console.log(`[Memo] Primary proxy OK: ${url}`)
       return { ok: true, data }
     }
-    if (res.status === 401) return { ok: false, error: "TOKEN_EXPIRED" }
-  } catch (e) {
-    // Direct failed (CORS) - try proxies
-  }
 
-  // Try each proxy
-  for (let i = 0; i < CORS_PROXIES.length; i++) {
-    try {
-      const proxyUrl = getProxyUrl(url, i)
-      const res = await fetch(proxyUrl, {
-        method: "GET",
-        headers,
-        credentials: "omit" as RequestCredentials,
-      })
-      if (res.ok) {
-        const data = await res.json()
-        // Proxy succeeded
-        return { ok: true, data }
-      }
-      if (res.status === 401) return { ok: false, error: "TOKEN_EXPIRED" }
-    } catch (e: any) {
-      // Try next proxy
+    // 401 Unauthorized -> token expired
+    if (res.status === 401) {
+      console.warn(`[Memo] 401 from Oura API - token expired: ${url}`)
+      return { ok: false, error: "TOKEN_EXPIRED" }
     }
+
+    // 404 Not Found -> no data for that day (treat as success with empty data)
+    if (res.status === 404) {
+      console.log(`[Memo] 404 from Oura API - no data for this day: ${url}`)
+      return { ok: true, data: { data: [] } }
+    }
+
+    // Other HTTP errors -> log and try backup proxy
+    console.warn(`[Memo] Primary proxy HTTP ${res.status}: ${url}`)
+  } catch (err: any) {
+    console.warn(`[Memo] Primary proxy failed (${err?.message || "network error"}), trying backup: ${url}`)
   }
 
-  return { ok: false, error: "All CORS proxies failed. GitHub Pages blocks direct API calls." }
+  // --- Try backup proxy (corsproxy.io) ---
+  try {
+    const proxyUrl = buildProxyUrl(BACKUP_PROXY, url)
+    const res = await fetchWithTimeout(
+      proxyUrl,
+      { method: "GET", headers, credentials },
+      REQUEST_TIMEOUT_MS
+    )
+
+    if (res.ok) {
+      const data = await res.json()
+      console.log(`[Memo] Backup proxy OK: ${url}`)
+      return { ok: true, data }
+    }
+
+    if (res.status === 401) {
+      console.warn(`[Memo] 401 from Oura API (backup) - token expired: ${url}`)
+      return { ok: false, error: "TOKEN_EXPIRED" }
+    }
+
+    if (res.status === 404) {
+      console.log(`[Memo] 404 from Oura API (backup) - no data for this day: ${url}`)
+      return { ok: true, data: { data: [] } }
+    }
+
+    console.warn(`[Memo] Backup proxy HTTP ${res.status}: ${url}`)
+    return { ok: false, error: `HTTP ${res.status} from Oura API via backup proxy` }
+  } catch (err: any) {
+    console.error(`[Memo] Backup proxy also failed (${err?.message || "network error"}): ${url}`)
+    return { ok: false, error: `All CORS proxies failed (${err?.message || "network error"}). Direct API calls are blocked on GitHub Pages.` }
+  }
 }
 
 // Safe fetch wrapper - returns empty/default on failure, never throws

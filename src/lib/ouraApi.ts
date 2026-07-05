@@ -15,11 +15,23 @@ function getRedirectUri(): string {
   return origin + path
 }
 
+// All Oura API v2 scopes we need
+const OURA_SCOPES = [
+  "daily_activity",
+  "daily_readiness",
+  "daily_sleep",
+  "daily_spo2",
+  "daily_stress",
+  "daily_resilience",
+  "heartrate",
+  "workout",
+  "personal_info",
+]
+
 export function getOuraAuthUrl(): string {
   const redirect = encodeURIComponent(getRedirectUri())
-  const scope = encodeURIComponent(
-    "daily_readiness daily_sleep daily_activity daily_spo2 daily_stress daily_resilience heartrate workout personal_info"
-  )
+  // Use + for spaces (standard OAuth query param encoding)
+  const scope = OURA_SCOPES.join("+")
   return `https://cloud.ouraring.com/oauth/authorize?client_id=${CLIENT_ID}&redirect_uri=${redirect}&response_type=token&scope=${scope}`
 }
 
@@ -73,13 +85,42 @@ function authHeaders(token: string) {
   }
 }
 
-async function fetchOura<T>(endpoint: string, token: string): Promise<T> {
-  const url = `${OURA_BASE}${endpoint}`
-  const res = await fetch(url, {
+// Free CORS proxies for GitHub Pages (try in order)
+const CORS_PROXIES = [
+  "https://api.allorigins.win/raw?url=",
+  "https://corsproxy.io/?",
+]
+
+async function tryFetch(url: string, headers: Record<string, string>, useProxy: boolean): Promise<Response> {
+  const targetUrl = useProxy ? CORS_PROXIES[0] + encodeURIComponent(url) : url
+  return fetch(targetUrl, {
     method: "GET",
-    headers: authHeaders(token),
+    headers,
     credentials: "omit",
   })
+}
+
+async function fetchOura<T>(endpoint: string, token: string): Promise<T> {
+  const url = `${OURA_BASE}${endpoint}`
+  let res: Response
+
+  try {
+    // Try direct API call first
+    res = await tryFetch(url, authHeaders(token), false)
+  } catch (directErr: any) {
+    // If direct fails (likely CORS), try CORS proxy
+    try {
+      res = await tryFetch(url, authHeaders(token), true)
+    } catch (proxyErr: any) {
+      const err: any = new Error(
+        "Unable to connect to Oura API. This may be due to network restrictions. " +
+        "Please try accessing from a different network or device."
+      )
+      err.code = "CORS_ERROR"
+      throw err
+    }
+  }
+
   if (res.status === 401) {
     const err: any = new Error("TOKEN_EXPIRED")
     err.code = "TOKEN_EXPIRED"
@@ -89,7 +130,7 @@ async function fetchOura<T>(endpoint: string, token: string): Promise<T> {
     throw new Error(`Oura API error: ${res.status} ${res.statusText}`)
   }
   const data = await res.json()
-  return data
+  return data as T
 }
 
 function dateRange(start: string, end: string) {

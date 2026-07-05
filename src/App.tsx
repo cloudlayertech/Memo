@@ -7,9 +7,23 @@ import Trends from "@/pages/Trends"
 import Recommendations from "@/pages/Recommendations"
 import Settings from "@/pages/Settings"
 import Notes from "@/pages/Notes"
+import { RefreshCw } from "lucide-react"
 
 function App() {
-  const { isAuthenticated } = useData()
+  const { isAuthenticated, initializing } = useData()
+
+  /* Show loading screen while checking for stored token — prevents
+     blank page flash or premature redirect to /connect */
+  if (initializing) {
+    return (
+      <div className="min-h-[100dvh] bg-memo-bg flex items-center justify-center">
+        <div className="text-center">
+          <RefreshCw className="w-8 h-8 text-[#8B6F4E] animate-spin mx-auto mb-3" />
+          <p className="text-lg text-memo-text-secondary">Loading...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <Layout>

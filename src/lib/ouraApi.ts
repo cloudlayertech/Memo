@@ -13,6 +13,7 @@ const OURA_SCOPES = [
   "personal",
   "spo2",
   "stress",
+  "resilience",
   "email",
 ]
 
@@ -33,15 +34,15 @@ export function getOuraAuthUrl(): string {
 export function parseOAuthCallback(): OuraToken | null {
   const hash = window.location.hash
   if (!hash || hash.length < 2) return null
-  // HashRouter format: #/path or #access_token=...
-  // After OAuth redirect, hash is: #access_token=xxx&token_type=bearer...
-  // We need to check if the hash contains an access_token
 
-  // Remove the leading # if present
-  const hashContent = hash.startsWith("#/") ? hash.slice(2) : hash.slice(1)
+  // After OAuth redirect, hash is like: #access_token=xxx&token_type=bearer...
+  // HashRouter normally uses: #/  or #/trends etc.
+  // We need to detect if this is an OAuth callback vs a normal route
 
-  // Check if this looks like an OAuth callback (has access_token)
-  if (!hashContent.includes("access_token")) return null
+  const hashContent = hash.slice(1) // Remove leading #
+
+  // Check if this contains OAuth params
+  if (!hashContent.includes("access_token=")) return null
 
   const params = new URLSearchParams(hashContent)
   const accessToken = params.get("access_token")
@@ -49,16 +50,15 @@ export function parseOAuthCallback(): OuraToken | null {
 
   if (!accessToken) return null
 
-  // Store token
   const token: OuraToken = {
     accessToken,
     expiresAt: Date.now() + (Number(expiresIn) || 86400) * 1000,
   }
   setStoredToken(token)
 
-  // Clear the hash WITHOUT reloading the page
-  // Use replaceState to clean the token from the URL
-  window.history.replaceState({}, document.title, window.location.pathname + "#/")
+  // Clean the URL - remove the token from the hash
+  // DON'T add #/ here - let the router handle it
+  window.history.replaceState({}, document.title, window.location.pathname)
 
   return token
 }
@@ -91,6 +91,17 @@ export function clearStoredToken(): void {
 const PRIMARY_PROXY = "https://corsproxy.io/?"
 const BACKUP_PROXY = "https://api.allorigins.win/raw?url="
 const REQUEST_TIMEOUT_MS = 15000
+
+// ── Robust URL builder ───────────────────────────────────────────────
+// Builds Oura API URLs with the access_token embedded as a query param.
+// This avoids needing the Authorization header, which CORS proxies often strip.
+function buildOuraUrl(endpoint: string, token: string): string {
+  // endpoint may already contain query params, e.g. "/daily_sleep?start_date=X"
+  const base = `${OURA_BASE}${endpoint}`
+  const url = new URL(base, "https://api.ouraring.com")
+  url.searchParams.set("access_token", token)
+  return url.toString()
+}
 
 // ── Request deduplication cache ──────────────────────────────────────
 // Module-level cache persists across imports during the session.
@@ -126,16 +137,15 @@ async function fetchWithTimeout(url: string, init: RequestInit, ms: number): Pro
   }
 }
 
-async function tryFetch(proxyUrl: string, token: string): Promise<{ ok: boolean; data?: any; error?: string }> {
+async function tryFetch(proxyUrl: string, endpointName: string): Promise<{ ok: boolean; data?: any; error?: string }> {
+  // Token is embedded in the URL via buildOuraUrl — NO Authorization header needed.
+  // This is critical because CORS proxies (corsproxy.io, allorigins) strip
+  // the Authorization header. Passing access_token as a URL query param is
+  // officially supported by Oura and survives proxy forwarding.
   const init: RequestInit = {
     method: "GET",
-    headers: { Authorization: `Bearer ${token}` },
     credentials: "omit",
   }
-
-  // Extract endpoint name for logging
-  const ouraUrlMatch = proxyUrl.match(/usercollection\/([^?]+)/)
-  const endpointName = ouraUrlMatch ? ouraUrlMatch[1] : "unknown"
 
   // Try primary proxy
   try {
@@ -163,6 +173,7 @@ async function tryFetch(proxyUrl: string, token: string): Promise<{ ok: boolean;
 
   // Try backup proxy
   try {
+    // Extract the full Oura URL from the primary proxy URL
     const ouraUrl = decodeURIComponent(proxyUrl.slice(PRIMARY_PROXY.length))
     const backupUrl = BACKUP_PROXY + encodeURIComponent(ouraUrl)
     console.log(`[Memo] ${endpointName}: Trying backup proxy...`)
@@ -182,6 +193,24 @@ async function tryFetch(proxyUrl: string, token: string): Promise<{ ok: boolean;
   return { ok: false, error: "CORS proxy failed" }
 }
 
+// ── Retry wrapper ────────────────────────────────────────────────────
+// If an endpoint fails, wait 2 seconds and retry once.
+// This recovers from transient CORS proxy hiccups.
+async function safeFetchWithRetry<T>(
+  endpoint: string,
+  token: string,
+  extract: (data: any) => T,
+  fallback: T
+): Promise<{ data: T; status: string }> {
+  let result = await safeFetch(endpoint, token, extract, fallback)
+  if (result.status !== "loaded" && result.status !== "cached") {
+    console.log(`[Memo] Retrying ${endpoint} after 2s delay...`)
+    await new Promise((r) => setTimeout(r, 2000))
+    result = await safeFetch(endpoint, token, extract, fallback)
+  }
+  return result
+}
+
 async function safeFetch<T>(
   endpoint: string,
   token: string,
@@ -199,10 +228,9 @@ async function safeFetch<T>(
     }
   }
 
-  const separator = endpoint.includes("?") ? "&" : "?"
-  const ouraUrl = `${OURA_BASE}${endpoint}${separator}access_token=${token}`
+  const ouraUrl = buildOuraUrl(endpoint, token)
   const proxyUrl = PRIMARY_PROXY + encodeURIComponent(ouraUrl)
-  const result = await tryFetch(proxyUrl, token)
+  const result = await tryFetch(proxyUrl, endpoint.split("?")[0].replace(/^\//, ""))
   if (result.ok && result.data) {
     try {
       setCached(cacheKey, result.data)
@@ -228,7 +256,7 @@ function dtr(start: string, end: string) {
 
 export interface EndpointStatus {
   sleep: string; readiness: string; activity: string; heartRate: string
-  workout: string; spo2: string; stress: string
+  workout: string; spo2: string; stress: string; resilience: string
 }
 
 // Oura v2 API "contributors" fields are SCORES (0-100), NOT raw seconds.
@@ -284,14 +312,20 @@ function extractStress(item: any) {
 }
 
 // SpO2
-// NOTE: Oura does NOT provide a standalone breathing rate endpoint.
-// Breathing rate is available inside sleep data (sleep readout) but not
-// as a separate daily metric. The UI should NOT show a breathing rate card.
 function extractSpO2(item: any) {
   return {
     day: item.day || "",
     average: item.average ?? 0,
     breathingDisturbanceIndex: item.breathing_disturbance_index ?? 0,
+  }
+}
+
+// Resilience: Oura provides a daily resilience score (0-100) and a text level.
+function extractResilience(item: any) {
+  return {
+    day: item.day || "",
+    score: item.score ?? 0,       // 0-100 resilience score
+    level: item.level ?? "",       // e.g. "limited", "adequate", "solid", "strong"
   }
 }
 
@@ -332,7 +366,8 @@ export async function fetchDailyMetrics(
 
   const status: EndpointStatus = {
     sleep: "loading", readiness: "loading", activity: "loading",
-    heartRate: "loading", workout: "loading", spo2: "loading", stress: "loading",
+    heartRate: "loading", workout: "loading", spo2: "loading",
+    stress: "loading", resilience: "loading",
   }
   const update = (key: keyof EndpointStatus, value: string) => {
     status[key] = value
@@ -340,39 +375,44 @@ export async function fetchDailyMetrics(
   }
 
   // Sleep
-  const sleepR = await safeFetch(`/daily_sleep${dr(date, date)}`, token,
+  const sleepR = await safeFetchWithRetry(`/daily_sleep${dr(date, date)}`, token,
     (d) => ((d.data || []) as any[]).map(extractSleep), [])
   update("sleep", sleepR.status)
 
   // Readiness
-  const readinessR = await safeFetch(`/daily_readiness${dr(date, date)}`, token,
+  const readinessR = await safeFetchWithRetry(`/daily_readiness${dr(date, date)}`, token,
     (d) => ((d.data || []) as any[]).map(extractReadiness), [])
   update("readiness", readinessR.status)
 
   // Activity
-  const activityR = await safeFetch(`/daily_activity${dr(date, date)}`, token,
+  const activityR = await safeFetchWithRetry(`/daily_activity${dr(date, date)}`, token,
     (d) => ((d.data || []) as any[]).map(extractActivity), [])
   update("activity", activityR.status)
 
   // Heart Rate
-  const hrR = await safeFetch(`/heartrate${dtr(date, date)}`, token,
+  const hrR = await safeFetchWithRetry(`/heartrate${dtr(date, date)}`, token,
     (d) => (d.data || []) as any[], [])
   update("heartRate", hrR.status)
 
   // Workouts
-  const workoutR = await safeFetch(`/workout${dr(date, date)}`, token,
+  const workoutR = await safeFetchWithRetry(`/workout${dr(date, date)}`, token,
     (d) => ((d.data || []) as any[]).map(extractWorkout), [])
   update("workout", workoutR.status)
 
   // SpO2
-  const spo2R = await safeFetch(`/daily_spo2${dr(date, date)}`, token,
+  const spo2R = await safeFetchWithRetry(`/daily_spo2${dr(date, date)}`, token,
     (d) => ((d.data || []) as any[]).map(extractSpO2), [])
   update("spo2", spo2R.status)
 
   // Stress
-  const stressR = await safeFetch(`/daily_stress${dr(date, date)}`, token,
+  const stressR = await safeFetchWithRetry(`/daily_stress${dr(date, date)}`, token,
     (d) => ((d.data || []) as any[]).map(extractStress), [])
   update("stress", stressR.status)
+
+  // Resilience
+  const resilienceR = await safeFetchWithRetry(`/daily_resilience${dr(date, date)}`, token,
+    (d) => ((d.data || []) as any[]).map(extractResilience), [])
+  update("resilience", resilienceR.status)
 
   // Build maps by day
   const sleepMap = new Map<string, ReturnType<typeof extractSleep>>()
@@ -389,6 +429,9 @@ export async function fetchDailyMetrics(
 
   const stressMap = new Map<string, ReturnType<typeof extractStress>>()
   for (const s of stressR.data) stressMap.set(s.day || date, s)
+
+  const resilienceMap = new Map<string, ReturnType<typeof extractResilience>>()
+  for (const r of resilienceR.data) resilienceMap.set(r.day || date, r)
 
   // Heart rate calculation — split into all-day and nighttime (10 PM - 6 AM)
   const hrReadings = (hrR.data || []) as HeartRateDataPoint[]
@@ -422,6 +465,7 @@ export async function fetchDailyMetrics(
   const activityData = activityMap.get(date) || null
   const spo2Data = spo2Map.get(date) || null
   const stressData = stressMap.get(date) || null
+  const resilienceData = resilienceMap.get(date) || null
 
   const metrics: DailyMetrics = {
     date,
@@ -458,7 +502,10 @@ export async function fetchDailyMetrics(
       recoveryHigh: stressData.recoveryHigh,
       daySummary: stressData.daySummary,
     } : null,
-    resilience: null, // No scope available in Oura app
+    resilience: resilienceData ? {
+      score: resilienceData.score,
+      level: resilienceData.level,
+    } : null,
     workouts,
   }
 
@@ -486,6 +533,7 @@ export async function fetchDailyMetricsCached(
         workout: "cached",
         spo2: "cached",
         stress: "cached",
+        resilience: "cached",
       },
     }
   }
@@ -496,7 +544,7 @@ export async function fetchDailyMetricsCached(
 }
 
 export async function fetchPersonalInfo(token: string): Promise<PersonalInfo | null> {
-  const result = await safeFetch("/personal_info", token,
+  const result = await safeFetchWithRetry("/personal_info", token,
     (d) => d as PersonalInfo, null)
   return result.data
 }
@@ -537,18 +585,17 @@ export async function testOuraEndpoints(token: string): Promise<Record<string, a
     { name: "workout", url: `/workout?start_date=2025-07-04&end_date=2025-07-05` },
     { name: "daily_spo2", url: `/daily_spo2?start_date=2025-07-04&end_date=2025-07-05` },
     { name: "daily_stress", url: `/daily_stress?start_date=2025-07-04&end_date=2025-07-05` },
+    { name: "daily_resilience", url: `/daily_resilience?start_date=2025-07-04&end_date=2025-07-05` },
     { name: "personal_info", url: `/personal_info` },
   ]
 
   const results: Record<string, any> = {}
   for (const ep of endpoints) {
     try {
-      const separator = ep.url.includes("?") ? "&" : "?"
-      const ouraUrl = `${OURA_BASE}${ep.url}${separator}access_token=${token}`
+      const ouraUrl = buildOuraUrl(ep.url, token)
       const proxyUrl = PRIMARY_PROXY + encodeURIComponent(ouraUrl)
       const res = await fetchWithTimeout(proxyUrl, {
         method: "GET",
-        headers: { Authorization: `Bearer ${token}` },
         credentials: "omit",
       }, 15000)
       if (res.ok) {

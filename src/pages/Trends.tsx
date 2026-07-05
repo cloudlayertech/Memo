@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from "react"
 import { motion } from "framer-motion"
-import { Moon, HeartPulse, Footprints, Gauge, Droplets, Wind, Shield, RefreshCw } from "lucide-react"
+import { Moon, HeartPulse, Footprints, Gauge, Droplets, Wind, RefreshCw } from "lucide-react"
 import { useData } from "@/context/DataContext"
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts"
 import { fetchDailyMetricsCached } from "@/lib/ouraApi"
@@ -50,13 +50,6 @@ const chartConfigs = [
     icon: Wind,
     color: "#C4A46B",
     accessor: (m: DailyMetrics) => m.stress?.stressHigh ?? 0,
-  },
-  {
-    key: "resilience",
-    label: "Resilience Score",
-    icon: Shield,
-    color: "#8BB5A0",
-    accessor: (m: DailyMetrics) => m.resilience?.score ?? 0,
   },
 ]
 
@@ -175,7 +168,6 @@ export default function Trends() {
       steps: avg("activity"),
       heartRate: avg("heartRate"),
       stress: avg("stress"),
-      resilience: avg("resilience"),
     }
   }, [chartData, trendData])
 
@@ -234,14 +226,13 @@ export default function Trends() {
                 </span>
               )}
             </h2>
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-4">
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-4">
               {[
                 { label: "Sleep", value: averages.sleep, color: "#7B9EA8" },
                 { label: "Readiness", value: averages.readiness, color: "#9B8BB5" },
                 { label: "Steps", value: Number(averages.steps).toLocaleString(), color: "#7BA87B" },
                 { label: "Resting HR", value: averages.heartRate, color: "#C4706B" },
                 { label: "Stress", value: `${averages.stress}%`, color: "#C4A46B" },
-                { label: "Resilience", value: averages.resilience, color: "#8BB5A0" },
               ].map((item) => (
                 <div key={item.label} className="text-center">
                   <p className="text-xs text-memo-text-tertiary uppercase tracking-wider mb-1">{item.label}</p>
@@ -324,9 +315,13 @@ export default function Trends() {
                           {DataComponent}
                         </ChartComponent>
                       </ResponsiveContainer>
+                    ) : loading ? (
+                      <div className="h-full flex items-center justify-center">
+                        <RefreshCw className="w-5 h-5 text-memo-text-tertiary animate-spin" />
+                      </div>
                     ) : (
                       <div className="h-full flex items-center justify-center text-sm text-memo-text-tertiary">
-                        {loading ? "Loading..." : "No data available"}
+                        No data available
                       </div>
                     )}
                   </div>

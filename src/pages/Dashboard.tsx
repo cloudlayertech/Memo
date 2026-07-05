@@ -13,7 +13,6 @@ import CalendarStrip from "@/components/CalendarStrip"
 import DetailSheet from "@/components/DetailSheet"
 import DailyPlan from "@/components/DailyPlan"
 import type { DailyMetrics, MetricCategory } from "@/types/oura"
-import type { EndpointStatus } from "@/lib/ouraApi"
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
 
 /* ── Helpers ─────────────────────────────────────────────── */
@@ -29,31 +28,6 @@ function formatDuration(seconds: number): string {
 function formatPercent(value: number | undefined, total: number | undefined): string {
   if (value == null || total == null || total === 0) return "--"
   return `${Math.round((value / total) * 100)}%`
-}
-
-/** Check if any endpoint hasn't loaded successfully */
-function hasPartialData(status: EndpointStatus | null): boolean {
-  if (!status) return false
-  return Object.values(status).some((s) => s !== "loaded")
-}
-
-/** Build a human-readable list of missing scopes */
-function getMissingScopes(status: EndpointStatus | null): string[] {
-  if (!status) return []
-  const scopeNames: Record<string, string> = {
-    sleep: "Daily Sleep",
-    readiness: "Daily Readiness",
-    activity: "Daily Activity",
-    heartRate: "Heart Rate",
-    workout: "Workout",
-    spo2: "Daily SpO2",
-    stress: "Daily Stress",
-    resilience: "Daily Resilience",
-    personalInfo: "Personal Info",
-  }
-  return Object.entries(status)
-    .filter(([, s]) => s !== "loaded")
-    .map(([key]) => scopeNames[key] || key)
 }
 
 /* ── Card entrance animation ─────────────────────────────── */
@@ -433,41 +407,6 @@ export default function Dashboard() {
     </motion.div>
   )
 
-  /* ── Scope warning ─────────────────────────────────────── */
-  const renderScopeWarning = () => {
-    if (!hasPartialData(endpointStatus)) return null
-    const missing = getMissingScopes(endpointStatus)
-    if (missing.length <= 2) return null
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-        className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex gap-3 items-start mb-5"
-      >
-        <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-        <div className="flex-1 min-w-0">
-          <p className="text-base font-medium text-amber-800">
-            Some data is missing. Your Oura app may not have all scopes enabled.
-          </p>
-          <p className="text-base text-amber-700 mt-1">
-            Go to{" "}
-            <a
-              href="https://cloud.ouraring.com/oauth/applications"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline font-medium hover:text-amber-900"
-            >
-              cloud.ouraring.com/oauth/applications
-            </a>{" "}
-            and enable:{" "}
-            <span className="font-semibold">{missing.join(", ")}</span>
-          </p>
-        </div>
-      </motion.div>
-    )
-  }
-
   /* ── Alert Banner: "A Few Areas to Watch" ──────────────── */
   const renderAlertBanner = () => {
     if (warningRecs.length === 0) return null
@@ -557,14 +496,14 @@ export default function Dashboard() {
       {
         icon: Moon,
         label: "Sleep Score",
-        value: s.score != null ? String(s.score) : "--",
+        value: s.score != null && s.score > 0 ? String(s.score) : "--",
         unit: "/ 100",
         description: `${sleepQuality} for memory consolidation`,
       },
       {
         icon: Timer,
         label: "Sleep Efficiency",
-        value: s.efficiency != null ? `${s.efficiency}` : "--",
+        value: s.efficiency != null && s.efficiency > 0 ? `${s.efficiency}` : "--",
         unit: "%",
         description: `${efficiencyQuality} — ${s.efficiency >= 85 ? "restorative sleep pattern" : "more awake time detected, may impact memory"}`,
       },
@@ -639,26 +578,31 @@ export default function Dashboard() {
           : "Good — recovery is on track"
 
     // Card 2: Resting HR from readiness (primary) or heartRate data
-    const restingHR = rd?.restingHR ?? hr?.resting ?? null
-    const restingDesc = !restingHR
+    // FIX: Check > 0 instead of just truthy — Oura returns 0 when field is missing
+    const restingHRValue = rd?.restingHR ?? hr?.resting ?? 0
+    const hasRestingHR = restingHRValue > 0
+    const restingHRDisplay = hasRestingHR ? `${restingHRValue}` : "--"
+    const restingDesc = !hasRestingHR
       ? "No data available"
-      : restingHR > 80
+      : restingHRValue > 80
         ? "Elevated — check for stress or dehydration"
-        : restingHR >= 60
+        : restingHRValue >= 60
           ? "Healthy range"
           : "Low — monitor if symptomatic"
 
     // Card 3: Night HR (10 PM – 6 AM) from heartRate.nightAvg
     const nightAvg = hr?.nightAvg
     const nightMin = hr?.nightMin
-    const nightHRValue = nightAvg != null && nightAvg > 0 ? `${nightAvg}` : "--"
-    const nightDesc = nightAvg != null && nightAvg > 0
+    const hasNightHR = nightAvg != null && nightAvg > 0
+    const nightHRValue = hasNightHR ? `${nightAvg}` : "--"
+    const nightDesc = hasNightHR
       ? `Lowest: ${nightMin} bpm — Night HR linked to cognitive decline risk`
       : "No nighttime data available"
 
     // Card 4: HRV Balance (readiness score 0-100)
-    const hrvBalanceValue = hrvBalance != null && hrvBalance > 0 ? `${hrvBalance}` : "--"
-    const hrvBalanceDesc = !hrvBalance
+    const hasHrvBalance = hrvBalance != null && hrvBalance > 0
+    const hrvBalanceValue = hasHrvBalance ? `${hrvBalance}` : "--"
+    const hrvBalanceDesc = !hasHrvBalance
       ? "No data available"
       : hrvBalance < 60
         ? "Below optimal — prioritize rest and recovery"
@@ -677,7 +621,7 @@ export default function Dashboard() {
       {
         icon: HeartPulse,
         label: "Resting HR",
-        value: restingHR != null ? `${restingHR}` : "--",
+        value: restingHRDisplay,
         unit: "bpm",
         description: restingDesc,
       },
@@ -781,41 +725,87 @@ export default function Dashboard() {
   }
 
   /* ── BLOOD OXYGEN Section ──────────────────────────────── */
+  /* FIX: Always render this section — show "--" when SpO2 endpoint fails */
   const renderSpO2Section = () => {
-    if (!metrics?.spo2) return null
-    const sp = metrics.spo2
+    const sp = metrics?.spo2
+    const rd = metrics?.readiness
 
-    // Show "--" when SpO2 average is 0 (endpoint failed) or missing
-    const spo2Avg = sp.average != null && sp.average > 0 ? sp.average : null
+    // Card 1: SpO2 Average
+    const spo2Avg = sp?.average
+    const hasSpo2 = spo2Avg != null && spo2Avg > 0
+    const spo2Value = hasSpo2 ? `${spo2Avg}` : "--"
+    const spo2Desc = !hasSpo2
+      ? "SpO2 data not available — ensure Oura Ring is properly positioned"
+      : spo2Avg >= 95
+        ? "Normal — good oxygenation supports brain function"
+        : spo2Avg >= 92
+          ? "Mildly low — monitor for cognitive effects"
+          : "Low — low oxygen affects brain function and may cause confusion"
+
+    // Card 2: Breathing Disturbance Index
+    const bdi = sp?.breathingDisturbanceIndex
+    const hasBdi = bdi != null && bdi > 0
+    const bdiValue = hasBdi ? `${bdi}` : "--"
+    const bdiDesc = !hasBdi
+      ? "No breathing disturbance data available"
+      : bdi > 15
+        ? "High — possible sleep apnea, linked to amyloid buildup"
+        : bdi > 5
+          ? "Elevated — monitor trends"
+          : "Normal breathing pattern"
+
+    // Card 3: HRV Balance (from readiness) — useful context alongside oxygen
+    const hrvBalance = rd?.hrvBalance
+    const hasHrvBalance = hrvBalance != null && hrvBalance > 0
+    const hrvBalanceValue = hasHrvBalance ? `${hrvBalance}` : "--"
+    const hrvBalanceDesc = !hasHrvBalance
+      ? "No readiness data available"
+      : hrvBalance < 60
+        ? "Below optimal — prioritize rest and recovery"
+        : hrvBalance < 80
+          ? "Moderate — adequate recovery"
+          : "Optimal — nervous system is well recovered"
+
+    // Card 4: Readiness Score (from readiness) — overall recovery context
+    const readinessScore = rd?.score
+    const hasReadiness = readinessScore != null && readinessScore > 0
+    const readinessValue = hasReadiness ? `${readinessScore}` : "--"
+    const readinessDesc = !hasReadiness
+      ? "No readiness data available"
+      : readinessScore >= 80
+        ? "Well recovered — your body is ready for cognitive demands"
+        : readinessScore >= 60
+          ? "Moderate recovery — balance activity with rest"
+          : "Low recovery — prioritize rest to protect brain health"
 
     const cards = [
       {
         icon: Droplets,
         label: "SpO2 Average",
-        value: spo2Avg != null ? `${spo2Avg}` : "--",
+        value: spo2Value,
         unit: "%",
-        description: !spo2Avg
-          ? "SpO2 data not available — ensure Oura Ring is properly positioned"
-          : spo2Avg >= 95
-            ? "Normal — good oxygenation supports brain function"
-            : spo2Avg >= 92
-              ? "Mildly low — monitor for cognitive effects"
-              : "Low — low oxygen affects brain function and may cause confusion",
+        description: spo2Desc,
       },
       {
         icon: Wind,
         label: "Breathing Disturbance",
-        value: sp.breathingDisturbanceIndex != null && sp.breathingDisturbanceIndex > 0
-          ? `${sp.breathingDisturbanceIndex}`
-          : "--",
+        value: bdiValue,
         unit: "BDI",
-        description: !sp.breathingDisturbanceIndex
-          ? "No breathing disturbance data available"
-          : sp.breathingDisturbanceIndex > 15
-            ? "High — possible sleep apnea, linked to amyloid buildup"
-            : sp.breathingDisturbanceIndex > 5
-              ? "Elevated — monitor trends"
-              : "Normal breathing pattern",
+        description: bdiDesc,
+      },
+      {
+        icon: Shield,
+        label: "HRV Balance",
+        value: hrvBalanceValue,
+        unit: "/ 100",
+        description: hrvBalanceDesc,
+      },
+      {
+        icon: Activity,
+        label: "Readiness Score",
+        value: readinessValue,
+        unit: "/ 100",
+        description: readinessDesc,
       },
     ]
 
@@ -843,42 +833,86 @@ export default function Dashboard() {
 
   /* ── STRESS Section ────────────────────────────────────── */
   const renderStressSection = () => {
-    if (!metrics?.stress) return null
+    if (!metrics?.stress && !metrics?.readiness) return null
     const st = metrics.stress
+    const rd = metrics.readiness
 
-    // Recovery is in seconds from Oura — convert to hours properly
-    const recoverySeconds = st.recoveryHigh
-    const recoveryHours = recoverySeconds != null && recoverySeconds > 0
-      ? (recoverySeconds / 3600).toFixed(1)
-      : null
+    // Card 1: Stress Score — uses stress.daySummary (0-100), NOT resilience.level
+    const stressScore = st?.daySummary
+    const hasStress = stressScore != null && stressScore > 0
+    const stressValue = hasStress ? `${stressScore}` : "--"
+    const stressDesc = !hasStress
+      ? "No stress data available"
+      : stressScore > 70
+        ? "High — chronic stress accelerates memory decline via cortisol damage"
+        : stressScore > 40
+          ? "Moderate — relaxation practices help protect the hippocampus"
+          : "Low — good stress management supports long-term memory health"
 
-    // Stress score: use daySummary (0-100), NOT resilience.level string
-    const stressScore = st.daySummary != null && st.daySummary > 0 ? st.daySummary : null
+    // Card 2: Recovery — stress.recoveryHigh is in SECONDS, convert to hours
+    const recoverySeconds = st?.recoveryHigh
+    const hasRecovery = recoverySeconds != null && recoverySeconds > 0
+    const recoveryHours = hasRecovery ? (recoverySeconds / 3600).toFixed(1) : null
+    const recoveryValue = recoveryHours != null ? `${recoveryHours}` : "--"
+    const recoveryDesc = !hasRecovery
+      ? "No recovery data available"
+      : recoverySeconds > 2 * 3600
+        ? "Good recovery — rest repairs neural pathways"
+        : "Short recovery — prioritize rest to protect cognitive function"
+
+    // Card 3: Stress High — time in high stress state, in seconds → hours
+    const stressHighSeconds = st?.stressHigh
+    const hasStressHigh = stressHighSeconds != null && stressHighSeconds > 0
+    const stressHighHours = hasStressHigh ? (stressHighSeconds / 3600).toFixed(1) : null
+    const stressHighValue = stressHighHours != null ? `${stressHighHours}` : "--"
+    const stressHighDesc = !hasStressHigh
+      ? "No stress high data available"
+      : stressHighSeconds > 4 * 3600
+        ? "Extended high stress — take breaks to lower cortisol"
+        : stressHighSeconds > 2 * 3600
+          ? "Moderate high-stress time — mindfulness can help"
+          : "Low time in high stress — good autonomic balance"
+
+    // Card 4: Readiness Score — from readiness data, complementary to stress
+    const readinessScore = rd?.score
+    const hasReadiness = readinessScore != null && readinessScore > 0
+    const readinessValue = hasReadiness ? `${readinessScore}` : "--"
+    const readinessDesc = !hasReadiness
+      ? "No readiness data available"
+      : readinessScore >= 80
+        ? "Well recovered — good resilience to daily stressors"
+        : readinessScore >= 60
+          ? "Moderate — support recovery with quality sleep"
+          : "Low readiness — prioritize restorative activities"
 
     const cards = [
       {
         icon: Wind,
         label: "Stress Score",
-        value: stressScore != null ? `${stressScore}` : "--",
+        value: stressValue,
         unit: "/ 100",
-        description: !stressScore
-          ? "No stress data available"
-          : stressScore > 70
-            ? "High — chronic stress accelerates memory decline via cortisol damage"
-            : stressScore > 40
-              ? "Moderate — relaxation practices help protect the hippocampus"
-              : "Low — good stress management supports long-term memory health",
+        description: stressDesc,
       },
       {
         icon: Shield,
         label: "Recovery",
-        value: recoveryHours != null ? `${recoveryHours}` : "--",
+        value: recoveryValue,
         unit: "hrs",
-        description: !recoverySeconds
-          ? "No recovery data available"
-          : recoverySeconds > 2 * 3600
-            ? "Good recovery — rest repairs neural pathways"
-            : "Short recovery — prioritize rest to protect cognitive function",
+        description: recoveryDesc,
+      },
+      {
+        icon: Activity,
+        label: "Stress High",
+        value: stressHighValue,
+        unit: "hrs",
+        description: stressHighDesc,
+      },
+      {
+        icon: HeartPulse,
+        label: "Readiness",
+        value: readinessValue,
+        unit: "/ 100",
+        description: readinessDesc,
       },
     ]
 
@@ -930,8 +964,24 @@ export default function Dashboard() {
             </button>
           </div>
 
-          {renderScopeWarning()}
           {renderDebugPanel()}
+        </div>
+      </div>
+    )
+  }
+
+  /* ==================== INITIAL LOADING STATE ==================== */
+  if (loading && !metrics) {
+    return (
+      <div className="min-h-[100dvh] bg-memo-bg px-4 md:px-8 pt-6 pb-10">
+        <div className="w-full">
+          {renderHeader()}
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <RefreshCw className="w-8 h-8 text-[#8B6F4E] animate-spin mx-auto mb-3" />
+              <p className="text-lg text-memo-text-secondary">Loading health data...</p>
+            </div>
+          </div>
         </div>
       </div>
     )
@@ -952,16 +1002,10 @@ export default function Dashboard() {
           <CalendarStrip days={weekDays} selectedDate={selectedDate} onSelectDate={selectDate} />
         </motion.div>
 
-        {/* Scope Warning Banner */}
-        {renderScopeWarning()}
-
-        {loading && !metrics ? (
-          /* ---------- Loading spinner ---------- */
+        {!metrics ? (
+          /* ---------- No data for selected date ---------- */
           <div className="flex items-center justify-center py-16">
-            <div className="flex items-center gap-3 text-memo-text-tertiary">
-              <RefreshCw className="w-5 h-5 animate-spin" />
-              <span className="text-lg">Loading today&apos;s data...</span>
-            </div>
+            <p className="text-lg text-memo-text-tertiary">No data available for this date.</p>
           </div>
         ) : (
           <>
@@ -1015,10 +1059,11 @@ export default function Dashboard() {
 
             {/* ── Health Sections ────────────────────────── */}
             {metrics?.sleep && renderSleepSection()}
-            {metrics?.heartRate && renderHeartSection()}
+            {(metrics?.heartRate || metrics?.readiness) && renderHeartSection()}
             {metrics?.activity && renderActivitySection()}
-            {metrics?.spo2 && renderSpO2Section()}
-            {metrics?.stress && renderStressSection()}
+            {/* FIX: Always render Blood Oxygen section — handles null internally */}
+            {renderSpO2Section()}
+            {(metrics?.stress || metrics?.readiness) && renderStressSection()}
           </>
         )}
 

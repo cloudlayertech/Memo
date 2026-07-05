@@ -26,10 +26,13 @@ function getRedirectUri(): string {
 }
 
 export function getOuraAuthUrl(): string {
-  const redirect = encodeURIComponent(getRedirectUri())
-  // Use %20 (URL-encoded space) so Oura receives properly space-separated scopes
-  const scope = OURA_SCOPES.join("%20")
-  return `https://cloud.ouraring.com/oauth/authorize?client_id=${CLIENT_ID}&redirect_uri=${redirect}&response_type=token&scope=${scope}`
+  const params = new URLSearchParams({
+    client_id: CLIENT_ID,
+    redirect_uri: getRedirectUri(),
+    response_type: "token",
+    scope: OURA_SCOPES.join(" "),
+  })
+  return `https://cloud.ouraring.com/oauth/authorize?${params.toString()}`
 }
 
 export function parseOAuthCallback(): OuraToken | null {

@@ -1,23 +1,19 @@
 import type {
-  OuraToken, SleepDayData, ReadinessDayData, ActivityDayData,
-  HeartRateDataPoint, WorkoutData, SpO2DayData, StressDayData,
-  ResilienceDayData, PersonalInfo, DailyMetrics,
+  OuraToken, PersonalInfo, DailyMetrics,
 } from "@/types/oura"
 import { getNextDay, toIsoDate } from "./utils"
 
 const CLIENT_ID = "c64fde91-0fa4-4a71-b8bb-35617aeb408e"
 const OURA_BASE = "https://api.ouraring.com/v2/usercollection"
 
-// Oura OAuth scopes from developer console
-// These MUST match the scopes enabled in your Oura app
 const OURA_SCOPES = [
-  "daily",           // Sleep, Activity, Readiness
-  "heartrate",       // Heart rate
-  "workout",         // Workouts
-  "personal",        // Personal info
-  "spo2",            // Blood oxygen
-  "stress",          // Stress levels
-  "email",           // Email
+  "daily",
+  "heartrate",
+  "workout",
+  "personal",
+  "spo2",
+  "stress",
+  "email",
 ]
 
 function getRedirectUri(): string {
@@ -37,15 +33,20 @@ export function getOuraAuthUrl(): string {
 export function parseOAuthCallback(): OuraToken | null {
   const hash = window.location.hash
   if (!hash || hash.length < 2) return null
-  const params = new URLSearchParams(hash.slice(1))
+  // HashRouter: hash may be "access_token=xxx&token_type=..." OR "#/access_token=..."
+  const hashContent = hash.startsWith("#/") ? hash.slice(2) : hash.slice(1)
+  const params = new URLSearchParams(hashContent)
   const accessToken = params.get("access_token")
   const expiresIn = params.get("expires_in")
   if (!accessToken) return null
-  window.history.replaceState({}, document.title, window.location.pathname + window.location.search)
-  return {
+  // Store token
+  localStorage.setItem(TOKEN_KEY, JSON.stringify({
     accessToken,
     expiresAt: Date.now() + (Number(expiresIn) || 86400) * 1000,
-  }
+  }))
+  // CRITICAL: Redirect to #/ so HashRouter shows the Dashboard
+  window.location.replace(window.location.pathname + "#/")
+  return null // Return null - page will reload
 }
 
 const TOKEN_KEY = "memo_oura_token"
@@ -73,151 +74,71 @@ export function clearStoredToken(): void {
   localStorage.removeItem(TOKEN_KEY)
 }
 
-// === CORS Proxy Strategy ===
-// GitHub Pages is static hosting and Oura's API blocks cross-origin requests.
-// We ALWAYS route requests through a CORS proxy.
-// Primary:  corsproxy.io    (reliable, supports URL-encoded full URLs)
-// Backup:   allorigins.win  (fallback if primary fails)
-//
-// CRITICAL: We pass the access_token in the URL query parameter instead of
-// the Authorization header. CORS proxies often strip custom headers like
-// Authorization, but forwarding URL query params is always safe.
-
 const PRIMARY_PROXY = "https://corsproxy.io/?"
 const BACKUP_PROXY = "https://api.allorigins.win/raw?url="
 const REQUEST_TIMEOUT_MS = 15000
 
-function isGitHubPages(): boolean {
-  return typeof window !== "undefined" && window.location.hostname.includes("github.io")
+async function fetchWithTimeout(url: string, init: RequestInit, ms: number): Promise<Response> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), ms)
+  try {
+    const res = await fetch(url, { ...init, signal: controller.signal })
+    return res
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
-// Fetch with timeout. Rejects if the request takes longer than timeoutMs.
-function fetchWithTimeout(
-  url: string,
-  init: RequestInit,
-  timeoutMs: number
-): Promise<Response> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error(`Request timed out after ${timeoutMs}ms`))
-    }, timeoutMs)
-
-    fetch(url, init)
-      .then((res) => {
-        clearTimeout(timer)
-        resolve(res)
-      })
-      .catch((err) => {
-        clearTimeout(timer)
-        reject(err)
-      })
-  })
-}
-
-// Core fetch through CORS proxy.
-// The full Oura URL (including access_token) is wrapped by the proxy via encodeURIComponent.
-// NO Authorization header is sent — the token travels in the URL query param.
-// Returns { ok, data, error } — never throws.
 async function tryFetch(proxyUrl: string, token: string): Promise<{ ok: boolean; data?: any; error?: string }> {
-  // Send Authorization header AND token in URL (Oura supports both)
   const init: RequestInit = {
     method: "GET",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+    headers: { Authorization: `Bearer ${token}` },
     credentials: "omit",
   }
 
-  console.log(`[Memo] ${isGitHubPages() ? "GitHub Pages" : "local"} - fetching via proxy`)
-
-  // --- Try primary proxy (corsproxy.io) ---
+  // Try primary proxy
   try {
     const res = await fetchWithTimeout(proxyUrl, init, REQUEST_TIMEOUT_MS)
-
     if (res.ok) {
       const data = await res.json()
-      console.log(`[Memo] Primary proxy OK`)
       return { ok: true, data }
     }
+    if (res.status === 401) return { ok: false, error: "TOKEN_EXPIRED" }
+    if (res.status === 404) return { ok: true, data: { data: [] } }
+  } catch {}
 
-    // 401 Unauthorized -> token expired
-    if (res.status === 401) {
-      console.warn(`[Memo] 401 from Oura API - token expired`)
-      return { ok: false, error: "TOKEN_EXPIRED" }
-    }
-
-    // 404 Not Found -> no data for that day (treat as success with empty data)
-    if (res.status === 404) {
-      console.log(`[Memo] 404 from Oura API - no data for this day`)
-      return { ok: true, data: { data: [] } }
-    }
-
-    // Other HTTP errors -> log and try backup proxy
-    console.warn(`[Memo] Primary proxy HTTP ${res.status}`)
-  } catch (err: any) {
-    console.warn(`[Memo] Primary proxy failed (${err?.message || "network error"}), trying backup`)
-  }
-
-  // --- Try backup proxy (allorigins.win) ---
-  // Convert to allorigins format: BACKUP_PROXY + encodeURIComponent(ouraUrl)
-  // The proxyUrl is PRIMARY_PROXY + encodeURIComponent(ouraUrl), so we need to
-  // extract the Oura URL and re-wrap with the backup proxy.
+  // Try backup proxy
   try {
-    // Extract the Oura URL from the primary proxy URL
-    // PRIMARY_PROXY = "https://corsproxy.io/?"
     const ouraUrl = decodeURIComponent(proxyUrl.slice(PRIMARY_PROXY.length))
     const backupUrl = BACKUP_PROXY + encodeURIComponent(ouraUrl)
-
     const res = await fetchWithTimeout(backupUrl, init, REQUEST_TIMEOUT_MS)
-
     if (res.ok) {
       const data = await res.json()
-      console.log(`[Memo] Backup proxy OK`)
       return { ok: true, data }
     }
+    if (res.status === 401) return { ok: false, error: "TOKEN_EXPIRED" }
+    if (res.status === 404) return { ok: true, data: { data: [] } }
+  } catch {}
 
-    if (res.status === 401) {
-      console.warn(`[Memo] 401 from Oura API (backup) - token expired`)
-      return { ok: false, error: "TOKEN_EXPIRED" }
-    }
-
-    if (res.status === 404) {
-      console.log(`[Memo] 404 from Oura API (backup) - no data for this day`)
-      return { ok: true, data: { data: [] } }
-    }
-
-    console.warn(`[Memo] Backup proxy HTTP ${res.status}`)
-    return { ok: false, error: `HTTP ${res.status} from Oura API via backup proxy` }
-  } catch (err: any) {
-    console.error(`[Memo] Backup proxy also failed (${err?.message || "network error"})`)
-    return { ok: false, error: `All CORS proxies failed (${err?.message || "network error"}). Direct API calls are blocked on GitHub Pages.` }
-  }
+  return { ok: false, error: "CORS proxy failed" }
 }
 
-// Safe fetch wrapper - catches errors per-endpoint, never throws.
-// Builds the Oura URL with access_token in the query string, wraps with proxy.
-// Returns { data, status } where status is "loaded" or an error message.
 async function safeFetch<T>(
-  _name: string,
   endpoint: string,
   token: string,
   extract: (data: any) => T,
   fallback: T
 ): Promise<{ data: T; status: string }> {
-  // Build the full Oura URL with the access_token appended as query param
   const separator = endpoint.includes("?") ? "&" : "?"
   const ouraUrl = `${OURA_BASE}${endpoint}${separator}access_token=${token}`
-
-  // Wrap with primary CORS proxy: the entire Oura URL is encoded
   const proxyUrl = PRIMARY_PROXY + encodeURIComponent(ouraUrl)
-
   const result = await tryFetch(proxyUrl, token)
   if (result.ok && result.data) {
     try {
       const extracted = extract(result.data)
       return { data: extracted, status: "loaded" }
-    } catch (e) {
-      return { data: fallback, status: `parse error: ${(e as Error).message}` }
+    } catch {
+      return { data: fallback, status: "parse error" }
     }
   }
   if (result.error === "TOKEN_EXPIRED") {
@@ -226,36 +147,89 @@ async function safeFetch<T>(
   return { data: fallback, status: result.error || "failed" }
 }
 
-function dateRange(start: string, end: string) {
+function dr(start: string, end: string) {
   return `?start_date=${start}&end_date=${end}`
 }
 
-function dateTimeRange(start: string, end: string) {
+function dtr(start: string, end: string) {
   return `?start_datetime=${start}T00:00:00&end_datetime=${end}T23:59:59`
 }
 
-export async function fetchPersonalInfo(token: string): Promise<PersonalInfo | null> {
-  const result = await safeFetch(
-    "personal_info",
-    "/personal_info",
-    token,
-    (d) => d as PersonalInfo,
-    null
-  )
-  return result.data
+export interface EndpointStatus {
+  sleep: string; readiness: string; activity: string; heartRate: string
+  workout: string; spo2: string; stress: string
 }
 
-// Type for per-endpoint status tracking
-export interface EndpointStatus {
-  sleep: string
-  readiness: string
-  activity: string
-  heartRate: string
-  workout: string
-  spo2: string
-  stress: string
-  resilience: string
-  personalInfo: string
+// Oura v2 API returns data under "contributors" object
+// Sleep: contributors.total_sleep (seconds), .deep_sleep, .rem_sleep, .light_sleep, .efficiency, .latency
+function extractSleep(item: any) {
+  const c = item.contributors || {}
+  return {
+    day: item.day || "",
+    score: item.score ?? 0,
+    totalDuration: c.total_sleep ?? 0,
+    deepDuration: c.deep_sleep ?? 0,
+    remDuration: c.rem_sleep ?? 0,
+    lightDuration: c.light_sleep ?? 0,
+    latency: c.latency ?? 0,
+    efficiency: c.efficiency ?? 0,
+  }
+}
+
+// Readiness: contributors.hrv_balance, .resting_heart_rate, .body_temperature, etc.
+function extractReadiness(item: any) {
+  const c = item.contributors || {}
+  return {
+    day: item.day || "",
+    score: item.score ?? 0,
+    temperatureDeviation: c.body_temperature ?? 0,
+    restingHR: c.resting_heart_rate ?? 0,
+    hrvBalance: c.hrv_balance ?? 0,
+  }
+}
+
+// Activity: direct fields on item
+function extractActivity(item: any) {
+  return {
+    day: item.day || "",
+    score: item.score ?? 0,
+    steps: item.steps ?? 0,
+    activeCalories: item.active_calories ?? item.calories_active ?? 0,
+    totalCalories: item.total_calories ?? 0,
+    highIntensityMin: item.high_intensity_minutes ?? 0,
+    distance: item.equivalent_walking_distance ?? 0,
+  }
+}
+
+// Stress: day_summary is the 0-100 score. stress_high and recovery_high are in seconds.
+function extractStress(item: any) {
+  return {
+    day: item.day || "",
+    stressHigh: item.stress_high ?? 0,       // seconds, not percentage
+    recoveryHigh: item.recovery_high ?? 0,   // seconds
+    daySummary: item.day_summary ?? 0,        // 0-100 score
+  }
+}
+
+// SpO2
+function extractSpO2(item: any) {
+  return {
+    day: item.day || "",
+    average: item.average ?? 0,
+    breathingDisturbanceIndex: item.breathing_disturbance_index ?? 0,
+  }
+}
+
+// Workout
+function extractWorkout(w: any) {
+  const start = new Date(w.start_datetime || w.start_time).getTime()
+  const end = new Date(w.end_datetime || w.end_time).getTime()
+  return {
+    activity: w.activity || "Workout",
+    calories: w.calories || 0,
+    duration: isNaN(end - start) ? 0 : Math.round((end - start) / 60000),
+    distance: w.distance || 0,
+  }
 }
 
 export async function fetchDailyMetrics(
@@ -263,139 +237,138 @@ export async function fetchDailyMetrics(
   date: string,
   onStatus?: (status: EndpointStatus) => void
 ): Promise<{ metrics: DailyMetrics; status: EndpointStatus }> {
-  const start = date
-  const end = date
 
   const status: EndpointStatus = {
-    sleep: "loading",
-    readiness: "loading",
-    activity: "loading",
-    heartRate: "loading",
-    workout: "loading",
-    spo2: "loading",
-    stress: "loading",
-    resilience: "loading",
-    personalInfo: "loading",
+    sleep: "loading", readiness: "loading", activity: "loading",
+    heartRate: "loading", workout: "loading", spo2: "loading", stress: "loading",
   }
-
   const update = (key: keyof EndpointStatus, value: string) => {
     status[key] = value
     onStatus?.({ ...status })
   }
 
-  // Fetch endpoints sequentially (not Promise.all) so each gets its own proxy request.
-  // This is more reliable through CORS proxies than parallel requests.
-  const sleepResult = await safeFetch(
-    "sleep", `/daily_sleep${dateRange(start, end)}`, token,
-    (d) => (d.data || []) as SleepDayData[], []
-  )
-  update("sleep", sleepResult.status)
+  // Sleep
+  const sleepR = await safeFetch(`/daily_sleep${dr(date, date)}`, token,
+    (d) => ((d.data || []) as any[]).map(extractSleep), [])
+  update("sleep", sleepR.status)
 
-  const readinessResult = await safeFetch(
-    "readiness", `/daily_readiness${dateRange(start, end)}`, token,
-    (d) => (d.data || []) as ReadinessDayData[], []
-  )
-  update("readiness", readinessResult.status)
+  // Readiness
+  const readinessR = await safeFetch(`/daily_readiness${dr(date, date)}`, token,
+    (d) => ((d.data || []) as any[]).map(extractReadiness), [])
+  update("readiness", readinessR.status)
 
-  const activityResult = await safeFetch(
-    "activity", `/daily_activity${dateRange(start, end)}`, token,
-    (d) => (d.data || []) as ActivityDayData[], []
-  )
-  update("activity", activityResult.status)
+  // Activity
+  const activityR = await safeFetch(`/daily_activity${dr(date, date)}`, token,
+    (d) => ((d.data || []) as any[]).map(extractActivity), [])
+  update("activity", activityR.status)
 
-  const hrResult = await safeFetch(
-    "heartrate", `/heartrate${dateTimeRange(start, end)}`, token,
-    (d) => (d.data || []) as HeartRateDataPoint[], []
-  )
-  update("heartRate", hrResult.status)
+  // Heart Rate
+  const hrR = await safeFetch(`/heartrate${dtr(date, date)}`, token,
+    (d) => (d.data || []) as any[], [])
+  update("heartRate", hrR.status)
 
-  const workoutResult = await safeFetch(
-    "workout", `/workout${dateRange(start, end)}`, token,
-    (d) => (d.data || []) as WorkoutData[], []
-  )
-  update("workout", workoutResult.status)
+  // Workouts
+  const workoutR = await safeFetch(`/workout${dr(date, date)}`, token,
+    (d) => ((d.data || []) as any[]).map(extractWorkout), [])
+  update("workout", workoutR.status)
 
-  const spo2Result = await safeFetch(
-    "spo2", `/daily_spo2${dateRange(start, end)}`, token,
-    (d) => (d.data || []) as SpO2DayData[], []
-  )
-  update("spo2", spo2Result.status)
+  // SpO2
+  const spo2R = await safeFetch(`/daily_spo2${dr(date, date)}`, token,
+    (d) => ((d.data || []) as any[]).map(extractSpO2), [])
+  update("spo2", spo2R.status)
 
-  const stressResult = await safeFetch(
-    "stress", `/daily_stress${dateRange(start, end)}`, token,
-    (d) => (d.data || []) as StressDayData[], []
-  )
-  update("stress", stressResult.status)
+  // Stress
+  const stressR = await safeFetch(`/daily_stress${dr(date, date)}`, token,
+    (d) => ((d.data || []) as any[]).map(extractStress), [])
+  update("stress", stressR.status)
 
-  const resilienceResult = await safeFetch(
-    "resilience", `/daily_resilience${dateRange(start, end)}`, token,
-    (d) => (d.data || []) as ResilienceDayData[], []
-  )
-  update("resilience", resilienceResult.status)
+  // Build maps by day
+  const sleepMap = new Map<string, ReturnType<typeof extractSleep>>()
+  for (const s of sleepR.data) sleepMap.set(s.day || date, s)
 
-  // Build maps
-  const sleepMap = new Map<string, SleepDayData>()
-  for (const d of sleepResult.data) sleepMap.set(d.day, d)
+  const readinessMap = new Map<string, ReturnType<typeof extractReadiness>>()
+  for (const r of readinessR.data) readinessMap.set(r.day || date, r)
 
-  const readinessMap = new Map<string, ReadinessDayData>()
-  for (const d of readinessResult.data) readinessMap.set(d.day, d)
+  const activityMap = new Map<string, ReturnType<typeof extractActivity>>()
+  for (const a of activityR.data) activityMap.set(a.day || date, a)
 
-  const activityMap = new Map<string, ActivityDayData>()
-  for (const d of activityResult.data) activityMap.set(d.day, d)
+  const spo2Map = new Map<string, ReturnType<typeof extractSpO2>>()
+  for (const s of spo2R.data) spo2Map.set(s.day || date, s)
 
-  const spo2Map = new Map<string, SpO2DayData>()
-  for (const d of spo2Result.data) spo2Map.set(d.day, d)
+  const stressMap = new Map<string, ReturnType<typeof extractStress>>()
+  for (const s of stressR.data) stressMap.set(s.day || date, s)
 
-  const stressMap = new Map<string, StressDayData>()
-  for (const d of stressResult.data) stressMap.set(d.day, d)
+  // Heart rate calculation
+  const hrValues = (hrR.data || []).map((h: any) => h.bpm).filter((b: number) => typeof b === "number")
+  let heartRate = null
+  if (hrValues.length > 0) {
+    const sorted = [...hrValues].sort((a, b) => a - b)
+    heartRate = {
+      resting: Math.round(sorted[Math.floor(sorted.length * 0.1)]),
+      avg: Math.round(hrValues.reduce((a: number, b: number) => a + b, 0) / hrValues.length),
+      min: Math.min(...hrValues),
+      max: Math.max(...hrValues),
+    }
+  }
 
-  const resilienceMap = new Map<string, ResilienceDayData>()
-  for (const d of resilienceResult.data) resilienceMap.set(d.day, d)
+  // Workouts
+  const workouts = workoutR.data.length > 0 ? workoutR.data : null
 
+  // Oura records sleep/readiness with +1 day offset
   const nextDay = getNextDay(date)
 
-  const sleep = sleepMap.get(date) || null
-  const readiness = readinessMap.get(nextDay) || readinessMap.get(date) || null
-  const activity = activityMap.get(date) || null
-  const heartRate = calculateHeartRateMetrics(hrResult.data)
-  const workouts = workoutResult.data.length > 0 ? buildWorkoutSummary(workoutResult.data) : null
-  const spo2 = spo2Map.get(date) || null
-  const stress = stressMap.get(date) || null
-  const resilience = resilienceMap.get(date) || null
+  const sleepData = sleepMap.get(date) || sleepMap.get(nextDay) || null
+  const readinessData = readinessMap.get(nextDay) || readinessMap.get(date) || null
+  const activityData = activityMap.get(date) || null
+  const spo2Data = spo2Map.get(date) || null
+  const stressData = stressMap.get(date) || null
 
   const metrics: DailyMetrics = {
     date,
-    sleep: sleep ? { score: sleep.score, totalDuration: sleep.total_sleep_duration, deepDuration: sleep.deep_sleep_duration, remDuration: sleep.rem_sleep_duration, lightDuration: sleep.light_sleep_duration, latency: sleep.latency, efficiency: sleep.efficiency } : null,
-    readiness: readiness ? { score: readiness.score, temperatureDeviation: readiness.temperature_deviation, restingHR: readiness.resting_heart_rate, hrvBalance: readiness.hrv_balance } : null,
-    activity: activity ? { score: activity.score, steps: activity.steps, activeCalories: activity.calories_active, totalCalories: activity.total_calories, highIntensityMin: activity.high_intensity_minutes, distance: activity.equivalent_walking_distance } : null,
+    sleep: sleepData ? {
+      score: sleepData.score,
+      totalDuration: sleepData.totalDuration,
+      deepDuration: sleepData.deepDuration,
+      remDuration: sleepData.remDuration,
+      lightDuration: sleepData.lightDuration,
+      latency: sleepData.latency,
+      efficiency: sleepData.efficiency,
+    } : null,
+    readiness: readinessData ? {
+      score: readinessData.score,
+      temperatureDeviation: readinessData.temperatureDeviation,
+      restingHR: readinessData.restingHR,
+      hrvBalance: readinessData.hrvBalance,
+    } : null,
+    activity: activityData ? {
+      score: activityData.score,
+      steps: activityData.steps,
+      activeCalories: activityData.activeCalories,
+      totalCalories: activityData.totalCalories,
+      highIntensityMin: activityData.highIntensityMin,
+      distance: activityData.distance,
+    } : null,
     heartRate,
-    spo2: spo2 ? { average: spo2.average, breathingDisturbanceIndex: spo2.breathing_disturbance_index } : null,
-    stress: stress ? { stressHigh: stress.stress_high, recoveryHigh: stress.recovery_high, daySummary: stress.day_summary } : null,
-    resilience: resilience ? { score: resilience.score, level: resilience.level } : null,
+    spo2: spo2Data ? {
+      average: spo2Data.average,
+      breathingDisturbanceIndex: spo2Data.breathingDisturbanceIndex,
+    } : null,
+    stress: stressData ? {
+      stressHigh: stressData.stressHigh,
+      recoveryHigh: stressData.recoveryHigh,
+      daySummary: stressData.daySummary,
+    } : null,
+    resilience: null, // No scope available in Oura app
     workouts,
   }
 
   return { metrics, status }
 }
 
-function calculateHeartRateMetrics(hrData: HeartRateDataPoint[]): { resting: number; avg: number; min: number; max: number } | null {
-  if (!hrData || hrData.length === 0) return null
-  const bpms = hrData.map((d) => d.bpm)
-  const sorted = [...bpms].sort((a, b) => a - b)
-  const resting = Math.round(sorted[Math.floor(sorted.length * 0.1)])
-  const avg = Math.round(bpms.reduce((a, b) => a + b, 0) / bpms.length)
-  const min = Math.min(...bpms)
-  const max = Math.max(...bpms)
-  return { resting, avg, min, max }
-}
-
-function buildWorkoutSummary(workouts: WorkoutData[]): { activity: string; calories: number; duration: number; distance: number }[] {
-  return workouts.map((w) => {
-    const start = new Date(w.start_datetime).getTime()
-    const end = new Date(w.end_datetime).getTime()
-    const duration = Math.round((end - start) / 60000)
-    return { activity: w.activity, calories: w.calories, duration, distance: w.distance }
-  })
+export async function fetchPersonalInfo(token: string): Promise<PersonalInfo | null> {
+  const result = await safeFetch("/personal_info", token,
+    (d) => d as PersonalInfo, null)
+  return result.data
 }
 
 export async function fetchWeeklyData(token: string, endDate: string): Promise<DailyMetrics[]> {

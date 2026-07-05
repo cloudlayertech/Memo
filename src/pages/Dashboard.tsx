@@ -32,7 +32,7 @@ const categoryConfig: Record<MetricCategory, CategoryConfig> = {
     unit: "",
     format: (m) => ({
       value: m.sleep?.score != null ? String(m.sleep.score) : "--",
-      subtitle: m.sleep ? formatDuration(m.sleep.totalDuration) : "Connect your Oura Ring to see this data",
+      subtitle: m.sleep ? `Efficiency: ${m.sleep.efficiency}% · Latency: ${formatDuration(m.sleep.latency)}` : "Connect your Oura Ring to see this data",
       progress: m.sleep?.score ?? 0,
     }),
   },
@@ -43,7 +43,7 @@ const categoryConfig: Record<MetricCategory, CategoryConfig> = {
     unit: "",
     format: (m) => ({
       value: m.readiness?.score != null ? String(m.readiness.score) : "--",
-      subtitle: m.readiness ? `HRV: ${m.readiness.hrvBalance}` : "Connect your Oura Ring to see this data",
+      subtitle: m.readiness ? `Resting HR: ${m.readiness.restingHR} bpm` : "Connect your Oura Ring to see this data",
       progress: m.readiness?.score ?? 0,
     }),
   },
@@ -84,11 +84,11 @@ const categoryConfig: Record<MetricCategory, CategoryConfig> = {
     label: "Stress",
     icon: Wind,
     color: "#C4A46B",
-    unit: "%",
+    unit: "",
     format: (m) => ({
-      value: m.stress?.stressHigh != null ? String(m.stress.stressHigh) : "--",
-      subtitle: m.stress ? `Recovery: ${m.stress.recoveryHigh}%` : "Connect your Oura Ring to see this data",
-      progress: m.stress ? Math.max(0, 100 - m.stress.stressHigh) : 0,
+      value: m.stress?.daySummary != null ? String(m.stress.daySummary) : "--",
+      subtitle: m.stress ? `Score 0-100 · Lower is calmer` : "Connect your Oura Ring to see this data",
+      progress: m.stress?.daySummary ?? 0,
     }),
   },
   resilience: {

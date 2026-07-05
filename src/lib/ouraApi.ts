@@ -8,18 +8,12 @@ import { getNextDay, toIsoDate } from "./utils"
 const CLIENT_ID = "c64fde91-0fa4-4a71-b8bb-35617aeb408e"
 const OURA_BASE = "https://api.ouraring.com/v2/usercollection"
 
-// All Oura API v2 scopes
-const OURA_SCOPES = [
-  "daily_activity",
-  "daily_readiness",
-  "daily_sleep",
-  "daily_spo2",
-  "daily_stress",
-  "daily_resilience",
-  "heartrate",
-  "workout",
-  "personal_info",
-]
+// Oura OAuth scopes (NOT endpoint names!)
+// "daily" covers: sleep, activity, readiness, spo2, stress, resilience
+// "heartrate" covers: heart rate data
+// "workout" covers: workout data
+// "personal" covers: personal info
+const OURA_SCOPES = ["daily", "heartrate", "workout", "personal"]
 
 function getRedirectUri(): string {
   return window.location.origin + window.location.pathname

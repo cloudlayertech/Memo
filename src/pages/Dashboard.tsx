@@ -1,8 +1,9 @@
 import { useState, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
-import { motion } from "framer-motion"
+import { motion, AnimatePresence } from "framer-motion"
 import {
-  Moon, HeartPulse, Footprints, Droplets, Gauge, Wind, Shield, Zap, RefreshCw, ChevronRight
+  Moon, HeartPulse, Footprints, Droplets, Gauge, Wind, Shield, RefreshCw, ChevronRight,
+  Menu, X, LogOut, Bug, WifiOff
 } from "lucide-react"
 import { useData } from "@/context/DataContext"
 import { getRecommendationsForData } from "@/lib/recommendations"
@@ -103,8 +104,10 @@ const categoryConfig: Record<MetricCategory, CategoryConfig> = {
 }
 
 export default function Dashboard() {
-  const { personalInfo, metrics, loading, error, selectedDate, selectDate, refreshData } = useData()
+  const { personalInfo, metrics, loading, error, endpointStatus, selectedDate, selectDate, refreshData, disconnect } = useData()
   const [activeSheet, setActiveSheet] = useState<MetricCategory | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [showDebug, setShowDebug] = useState(false)
   const navigate = useNavigate()
 
   const weekDays = useMemo(() => getWeekDays(selectedDate), [selectedDate])
@@ -206,17 +209,59 @@ export default function Dashboard() {
 
   if (error) {
     return (
-      <div className="min-h-[100dvh] bg-memo-bg flex flex-col items-center justify-center px-6">
-        <div className="text-center max-w-sm">
-          <Zap className="w-12 h-12 text-memo-warning mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-memo-text mb-2">Unable to Load Data</h2>
-          <p className="text-memo-text-secondary mb-6">{error}</p>
-          <button
-            onClick={handleRetry}
-            className="bg-primary hover:bg-primary-dark text-white font-semibold h-12 px-6 rounded-xl transition-colors"
-          >
-            Try Again
-          </button>
+      <div className="min-h-[100dvh] bg-memo-bg px-4 pt-5 pb-10">
+        <div className="max-w-2xl mx-auto">
+          {/* Header with menu */}
+          <div className="flex items-center justify-between mb-5">
+            <h1 className="text-3xl font-semibold text-memo-text">Memo</h1>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setShowDebug(!showDebug)} className="w-10 h-10 rounded-xl bg-white shadow-card flex items-center justify-center">
+                <Bug className="w-5 h-5 text-memo-text-secondary" />
+              </button>
+              <button onClick={() => setMenuOpen(!menuOpen)} className="w-10 h-10 rounded-xl bg-white shadow-card flex items-center justify-center relative">
+                {menuOpen ? <X className="w-5 h-5 text-memo-text-secondary" /> : <Menu className="w-5 h-5 text-memo-text-secondary" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Dropdown Menu */}
+          <AnimatePresence>
+            {menuOpen && (
+              <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+                className="absolute right-4 top-20 bg-white rounded-2xl shadow-elevated p-2 z-50 w-48">
+                <button onClick={disconnect} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-memo-danger hover:bg-red-50 text-sm font-medium transition-colors">
+                  <LogOut className="w-4 h-4" /> Disconnect Oura
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="text-center py-12">
+            <WifiOff className="w-12 h-12 text-memo-warning mx-auto mb-4" />
+            <h2 className="text-xl font-semibold text-memo-text mb-2">Unable to Load Data</h2>
+            <p className="text-memo-text-secondary mb-2">{error}</p>
+            <p className="text-sm text-memo-text-tertiary mb-6">GitHub Pages blocks direct API calls. Using CORS proxy...</p>
+            <button onClick={handleRetry} className="bg-primary hover:bg-primary-dark text-white font-semibold h-12 px-6 rounded-xl transition-colors">
+              Try Again
+            </button>
+          </div>
+
+          {/* Debug Panel */}
+          {showDebug && endpointStatus && (
+            <div className="bg-white rounded-2xl shadow-card p-4 mt-4">
+              <h3 className="text-sm font-semibold text-memo-text mb-3">Endpoint Status</h3>
+              <div className="space-y-2">
+                {Object.entries(endpointStatus).map(([key, value]) => (
+                  <div key={key} className="flex items-center justify-between text-sm">
+                    <span className="text-memo-text-secondary capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
+                    <span className={`font-medium ${value === 'loaded' ? 'text-memo-success' : value === 'loading' ? 'text-memo-text-tertiary' : 'text-memo-danger'}`}>
+                      {value === 'loaded' ? 'OK' : value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     )
@@ -224,31 +269,38 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-[100dvh] bg-memo-bg px-4 pt-5 pb-24">
-      <div className="max-w-2xl mx-auto space-y-5">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between"
-        >
+      <div className="max-w-2xl mx-auto space-y-5 relative">
+        {/* Header with Menu */}
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-semibold text-memo-text">
-              {new Date().getHours() < 12
-                ? "Good morning"
-                : new Date().getHours() < 17
-                ? "Good afternoon"
-                : "Good evening"}
+              {new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening"}
               {personalInfo?.name ? `, ${personalInfo.name.split(" ")[0]}` : ""}
             </h1>
             <p className="text-base text-memo-text-secondary mt-0.5">{formatDate(selectedDate)}</p>
           </div>
-          <button
-            onClick={refreshData}
-            className="w-10 h-10 rounded-xl bg-white shadow-card flex items-center justify-center hover:bg-memo-bg transition-colors"
-          >
-            <RefreshCw className="w-5 h-5 text-memo-text-secondary" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={refreshData} className="w-10 h-10 rounded-xl bg-white shadow-card flex items-center justify-center hover:bg-memo-bg transition-colors">
+              <RefreshCw className="w-5 h-5 text-memo-text-secondary" />
+            </button>
+            <button onClick={() => setMenuOpen(!menuOpen)} className="w-10 h-10 rounded-xl bg-white shadow-card flex items-center justify-center relative">
+              {menuOpen ? <X className="w-5 h-5 text-memo-text-secondary" /> : <Menu className="w-5 h-5 text-memo-text-secondary" />}
+            </button>
+          </div>
         </motion.div>
+
+        {/* Dropdown Menu */}
+        <AnimatePresence>
+          {menuOpen && (
+            <motion.div initial={{ opacity: 0, y: -10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -10, scale: 0.95 }}
+              transition={{ duration: 0.15 }}
+              className="absolute right-4 top-16 bg-white rounded-2xl shadow-elevated p-2 z-50 w-52">
+              <button onClick={() => { disconnect(); setMenuOpen(false); }} className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-memo-danger hover:bg-red-50 text-sm font-medium transition-colors">
+                <LogOut className="w-4 h-4" /> Disconnect Oura Ring
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Calendar */}
         <CalendarStrip days={weekDays} selectedDate={selectedDate} onSelectDate={selectDate} />

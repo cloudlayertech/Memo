@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from "react"
 import type { DailyMetrics, PersonalInfo, OuraToken } from "@/types/oura"
+import type { EndpointStatus } from "@/lib/ouraApi"
 import {
   parseOAuthCallback,
   getStoredToken,
@@ -16,6 +17,7 @@ interface DataContextType {
   metrics: DailyMetrics | null
   loading: boolean
   error: string | null
+  endpointStatus: EndpointStatus | null
   selectedDate: string
   isAuthenticated: boolean
   connect: () => void
@@ -32,6 +34,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [metrics, setMetrics] = useState<DailyMetrics | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [endpointStatus, setEndpointStatus] = useState<EndpointStatus | null>(null)
   const [selectedDate, setSelectedDate] = useState(todayStr())
   const isAuthenticated = !!token
 
@@ -40,11 +43,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setLoading(true)
       setError(null)
       try {
-        const [metricsData, info] = await Promise.all([
-          fetchDailyMetrics(accessToken, date),
+        const [metricsResult, info] = await Promise.all([
+          fetchDailyMetrics(accessToken, date, (status) => setEndpointStatus(status)),
           personalInfo ? Promise.resolve(personalInfo) : fetchPersonalInfo(accessToken),
         ])
-        setMetrics(metricsData)
+        setMetrics(metricsResult.metrics)
+        setEndpointStatus(metricsResult.status)
         setPersonalInfo(info)
       } catch (err: any) {
         if (err.code === "TOKEN_EXPIRED" || err.message?.includes("TOKEN_EXPIRED")) {
@@ -87,6 +91,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setPersonalInfo(null)
     setMetrics(null)
     setError(null)
+    setEndpointStatus(null)
+    window.location.reload()
   }, [])
 
   const selectDate = useCallback((date: string) => {
@@ -106,6 +112,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         metrics,
         loading,
         error,
+        endpointStatus,
         selectedDate,
         isAuthenticated,
         connect,

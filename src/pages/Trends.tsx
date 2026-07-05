@@ -89,8 +89,8 @@ export default function Trends() {
 
   const chartData = useMemo(() => {
     if (!trendData) return []
-    return trendData.map((m) => {
-      const entry: Record<string, any> = { date: m.date.slice(5) }
+    return trendData.map((m: any) => {
+      const entry: Record<string, any> = { date: m.date ? m.date.slice(5) : "" }
       chartConfigs.forEach((c) => {
         entry[c.key] = c.accessor(m)
       })

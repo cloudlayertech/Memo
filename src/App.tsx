@@ -6,6 +6,7 @@ import Dashboard from "@/pages/Dashboard"
 import Trends from "@/pages/Trends"
 import Recommendations from "@/pages/Recommendations"
 import Settings from "@/pages/Settings"
+import Notes from "@/pages/Notes"
 
 function App() {
   const { isAuthenticated } = useData()
@@ -32,6 +33,10 @@ function App() {
         <Route
           path="/settings"
           element={isAuthenticated ? <Settings /> : <Navigate to="/connect" replace />}
+        />
+        <Route
+          path="/notes"
+          element={isAuthenticated ? <Notes /> : <Navigate to="/connect" replace />}
         />
       </Routes>
     </Layout>

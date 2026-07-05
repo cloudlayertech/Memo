@@ -4,6 +4,7 @@ import { Moon, HeartPulse, Footprints, Gauge, Droplets, Wind, Shield } from "luc
 import { useData } from "@/context/DataContext"
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts"
 import SkeletonCard from "@/components/SkeletonCard"
+import BackButton from "@/components/BackButton"
 import { fetchWeeklyData, fetchMonthlyData } from "@/lib/ouraApi"
 import type { DailyMetrics } from "@/types/oura"
 
@@ -120,6 +121,7 @@ export default function Trends() {
   return (
     <div className="min-h-[100dvh] bg-memo-bg px-4 pt-5 pb-10">
       <div className="max-w-2xl mx-auto space-y-5">
+        <BackButton />
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           <h1 className="text-3xl font-semibold text-memo-text mb-1">Trends</h1>
           <p className="text-base text-memo-text-secondary">See how your metrics change over time</p>
@@ -127,15 +129,18 @@ export default function Trends() {
 
         {/* Time Range Selector */}
         <div className="flex bg-white rounded-xl p-1 shadow-card">
-          {[7, 30].map((r) => (
+          {[
+            { value: 7 as const, label: "This Week" },
+            { value: 30 as const, label: "This Month" },
+          ].map((r) => (
             <button
-              key={r}
-              onClick={() => setRange(r as 7 | 30)}
+              key={r.value}
+              onClick={() => setRange(r.value)}
               className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
-                range === r ? "bg-primary text-white" : "text-memo-text-secondary hover:bg-memo-bg"
+                range === r.value ? "bg-primary text-white" : "text-memo-text-secondary hover:bg-memo-bg"
               }`}
             >
-              {r} Days
+              {r.label}
             </button>
           ))}
         </div>

@@ -1,6 +1,7 @@
 import { motion } from "framer-motion"
 import { LogOut, User, Shield, Info } from "lucide-react"
 import { useData } from "@/context/DataContext"
+import BackButton from "@/components/BackButton"
 
 export default function Settings() {
   const { personalInfo, disconnect } = useData()
@@ -14,6 +15,7 @@ export default function Settings() {
   return (
     <div className="min-h-[100dvh] bg-memo-bg px-4 pt-5 pb-10">
       <div className="max-w-2xl mx-auto space-y-5">
+        <BackButton />
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           <h1 className="text-3xl font-semibold text-memo-text mb-1">Settings</h1>
           <p className="text-base text-memo-text-secondary">Manage your account and preferences</p>

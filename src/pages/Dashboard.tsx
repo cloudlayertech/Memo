@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   Moon, HeartPulse, Footprints, Droplets, Gauge, Wind, Shield,
-  RefreshCw, ChevronRight, Menu, X, LogOut, Bug, WifiOff, AlertTriangle
+  RefreshCw, ChevronRight, Menu, X, LogOut, Bug, WifiOff, AlertTriangle,
+  Activity, LayoutDashboard, TrendingUp, Lightbulb, Settings, FileText
 } from "lucide-react"
 import { useData } from "@/context/DataContext"
 import { getRecommendationsForData } from "@/lib/recommendations"
@@ -12,6 +13,7 @@ import MetricCard from "@/components/MetricCard"
 import CalendarStrip from "@/components/CalendarStrip"
 import DetailSheet from "@/components/DetailSheet"
 import SkeletonCard from "@/components/SkeletonCard"
+import DailyPlan from "@/components/DailyPlan"
 import type { DailyMetrics, MetricCategory } from "@/types/oura"
 import type { EndpointStatus } from "@/lib/ouraApi"
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
@@ -235,19 +237,33 @@ export default function Dashboard() {
 
   /* ---------- Shared header component ---------- */
   const renderHeader = (isErrorState = false) => (
-    <div className="flex items-center justify-between mb-5">
-      {isErrorState ? (
-        <h1 className="text-3xl font-semibold text-memo-text">Memo</h1>
-      ) : (
-        <div>
-          <h1 className="text-3xl font-semibold text-memo-text">
-            {new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening"}
-            {personalInfo?.name ? `, ${personalInfo.name.split(" ")[0]}` : ""}
-          </h1>
-          <p className="text-base text-memo-text-secondary mt-0.5">{formatDate(selectedDate)}</p>
-        </div>
-      )}
-      <div className="flex items-center gap-2">
+    <div className="flex items-center gap-3 mb-5">
+      {/* Hamburger - LEFT side */}
+      <button
+        onClick={() => setMenuOpen(true)}
+        className="w-10 h-10 rounded-xl bg-white shadow-card flex items-center justify-center flex-shrink-0"
+        title="Menu"
+      >
+        <Menu className="w-5 h-5 text-memo-text-secondary" />
+      </button>
+
+      {/* Title - center */}
+      <div className="flex-1 min-w-0">
+        {isErrorState ? (
+          <h1 className="text-3xl font-semibold text-memo-text">Memo</h1>
+        ) : (
+          <>
+            <h1 className="text-3xl font-semibold text-memo-text">
+              {new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening"}
+              {personalInfo?.name ? `, ${personalInfo.name.split(" ")[0]}` : ""}
+            </h1>
+            <p className="text-base text-memo-text-secondary mt-0.5">{formatDate(selectedDate)}</p>
+          </>
+        )}
+      </div>
+
+      {/* Right buttons */}
+      <div className="flex items-center gap-2 flex-shrink-0">
         {!isErrorState && (
           <button
             onClick={refreshData}
@@ -264,35 +280,91 @@ export default function Dashboard() {
         >
           <Bug className="w-5 h-5" />
         </button>
-        <button
-          onClick={() => setMenuOpen(!menuOpen)}
-          className="w-10 h-10 rounded-xl bg-white shadow-card flex items-center justify-center relative"
-          title="Menu"
-        >
-          {menuOpen ? <X className="w-5 h-5 text-memo-text-secondary" /> : <Menu className="w-5 h-5 text-memo-text-secondary" />}
-        </button>
       </div>
     </div>
   )
 
-  /* ---------- Shared dropdown menu ---------- */
+  /* ---------- Left slide-out menu ---------- */
   const renderMenu = () => (
     <AnimatePresence>
       {menuOpen && (
-        <motion.div
-          initial={{ opacity: 0, y: -10, scale: 0.95 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -10, scale: 0.95 }}
-          transition={{ duration: 0.15 }}
-          className="absolute right-4 top-16 bg-white rounded-2xl shadow-elevated p-2 z-50 w-52"
-        >
-          <button
-            onClick={() => { disconnect(); setMenuOpen(false); }}
-            className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-memo-danger hover:bg-red-50 text-sm font-medium transition-colors"
+        <>
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => setMenuOpen(false)}
+            className="fixed inset-0 bg-black/40 z-50"
+          />
+          {/* Drawer */}
+          <motion.div
+            initial={{ x: "-100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "-100%" }}
+            transition={{ type: "spring", damping: 28, stiffness: 300 }}
+            className="fixed top-0 left-0 bottom-0 w-[280px] bg-white z-50 shadow-elevated flex flex-col"
           >
-            <LogOut className="w-4 h-4" /> Disconnect Oura Ring
-          </button>
-        </motion.div>
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <Activity className="w-6 h-6 text-primary" />
+                <span className="text-lg font-semibold text-memo-text">Menu</span>
+              </div>
+              <button
+                onClick={() => setMenuOpen(false)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-memo-bg transition-colors"
+              >
+                <X className="w-5 h-5 text-memo-text-secondary" />
+              </button>
+            </div>
+
+            {/* User info */}
+            {personalInfo?.name && (
+              <div className="px-4 py-3 border-b border-gray-100">
+                <p className="text-sm font-medium text-memo-text">{personalInfo.name}</p>
+                <p className="text-xs text-memo-text-tertiary">Connected to Oura Ring</p>
+              </div>
+            )}
+
+            {/* Nav links */}
+            <nav className="flex-1 py-2">
+              {[
+                { to: "/", icon: LayoutDashboard, label: "Dashboard" },
+                { to: "/trends", icon: TrendingUp, label: "Trends" },
+                { to: "/recommendations", icon: Lightbulb, label: "Recommendations" },
+                { to: "/notes", icon: FileText, label: "Care Notes" },
+                { to: "/settings", icon: Settings, label: "Settings" },
+              ].map((item) => (
+                <button
+                  key={item.to}
+                  onClick={() => { navigate(item.to); setMenuOpen(false); }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left text-memo-text hover:bg-memo-bg transition-colors"
+                >
+                  <item.icon className="w-5 h-5 text-memo-text-secondary" />
+                  <span className="text-base font-medium">{item.label}</span>
+                </button>
+              ))}
+            </nav>
+
+            {/* Bottom actions */}
+            <div className="p-4 border-t border-gray-100 space-y-2">
+              <button
+                onClick={() => { setShowDebug(!showDebug); setMenuOpen(false); }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-memo-text-secondary hover:bg-memo-bg transition-colors"
+              >
+                <Bug className="w-4 h-4" /> {showDebug ? "Hide" : "Show"} Debug Panel
+              </button>
+              <button
+                onClick={() => { disconnect(); setMenuOpen(false); }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-memo-danger hover:bg-red-50 transition-colors"
+              >
+                <LogOut className="w-4 h-4" /> Disconnect Oura Ring
+              </button>
+            </div>
+          </motion.div>
+        </>
       )}
     </AnimatePresence>
   )
@@ -452,6 +524,9 @@ export default function Dashboard() {
                 </div>
               </motion.div>
             )}
+
+            {/* Daily Care Plan */}
+            <DailyPlan metrics={metrics} />
 
             {/* Metric Cards — all 7 always visible */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

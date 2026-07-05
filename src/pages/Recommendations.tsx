@@ -2,18 +2,19 @@ import { useState, useMemo } from "react"
 import { motion } from "framer-motion"
 import { useData } from "@/context/DataContext"
 import { getRecommendationsForData } from "@/lib/recommendations"
+import type { RecCategory, Severity } from "@/lib/recommendations"
 import RecommendationCard from "@/components/RecommendationCard"
 import SkeletonCard from "@/components/SkeletonCard"
-import type { RecCategory, Severity } from "@/types/oura"
+import BackButton from "@/components/BackButton"
 
 const categories: { key: RecCategory | "all"; label: string }[] = [
   { key: "all", label: "All" },
-  { key: "sleep", label: "Sleep" },
-  { key: "exercise", label: "Exercise" },
-  { key: "heart", label: "Heart" },
-  { key: "mental", label: "Mental" },
-  { key: "social", label: "Social" },
+  { key: "morning", label: "Morning" },
+  { key: "activities", label: "Activities" },
   { key: "nutrition", label: "Nutrition" },
+  { key: "social", label: "Social" },
+  { key: "evening", label: "Evening" },
+  { key: "safety", label: "Safety" },
   { key: "medical", label: "Medical" },
 ]
 
@@ -57,6 +58,7 @@ export default function Recommendations() {
   return (
     <div className="min-h-[100dvh] bg-memo-bg px-4 pt-5 pb-10">
       <div className="max-w-2xl mx-auto space-y-4">
+        <BackButton />
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           <h1 className="text-3xl font-semibold text-memo-text mb-1">Recommendations</h1>
           <p className="text-base text-memo-text-secondary">

@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { ChevronDown, Info, AlertTriangle, AlertCircle, CheckCircle2 } from "lucide-react"
-import type { Recommendation } from "@/types/oura"
+import type { Recommendation } from "@/lib/recommendations"
 
 const severityConfig = {
   info: { color: "#6B9BC4", bg: "#EBF2F8", icon: Info, label: "Tip" },
@@ -10,12 +10,12 @@ const severityConfig = {
 }
 
 const categoryLabels: Record<string, string> = {
-  sleep: "Sleep",
-  exercise: "Exercise",
-  heart: "Heart",
-  mental: "Mental",
-  social: "Social",
+  morning: "Morning",
+  activities: "Activities",
   nutrition: "Nutrition",
+  social: "Social",
+  evening: "Evening",
+  safety: "Safety",
   medical: "Medical",
 }
 

@@ -1,5 +1,5 @@
 import type {
-  OuraToken, PersonalInfo, DailyMetrics,
+  OuraToken, PersonalInfo, DailyMetrics, HeartRateDataPoint,
 } from "@/types/oura"
 import { getNextDay, toIsoDate } from "./utils"
 
@@ -284,11 +284,31 @@ function extractStress(item: any) {
 }
 
 // SpO2
+// NOTE: Oura does NOT provide a standalone breathing rate endpoint.
+// Breathing rate is available inside sleep data (sleep readout) but not
+// as a separate daily metric. The UI should NOT show a breathing rate card.
 function extractSpO2(item: any) {
   return {
     day: item.day || "",
     average: item.average ?? 0,
     breathingDisturbanceIndex: item.breathing_disturbance_index ?? 0,
+  }
+}
+
+// Night HR: filter to nighttime hours 10 PM - 6 AM
+export function calculateNightHR(hrData: HeartRateDataPoint[]): { avg: number; min: number; max: number } | null {
+  if (!hrData || hrData.length === 0) return null
+  // Filter to nighttime hours: 10 PM - 6 AM
+  const nightReadings = hrData.filter((h) => {
+    const hour = new Date(h.timestamp).getHours()
+    return hour >= 22 || hour < 6
+  })
+  if (nightReadings.length === 0) return null
+  const bpms = nightReadings.map((h) => h.bpm)
+  return {
+    avg: Math.round(bpms.reduce((a, b) => a + b, 0) / bpms.length),
+    min: Math.min(...bpms),
+    max: Math.max(...bpms),
   }
 }
 
@@ -370,8 +390,13 @@ export async function fetchDailyMetrics(
   const stressMap = new Map<string, ReturnType<typeof extractStress>>()
   for (const s of stressR.data) stressMap.set(s.day || date, s)
 
-  // Heart rate calculation
-  const hrValues = (hrR.data || []).map((h: any) => h.bpm).filter((b: number) => typeof b === "number")
+  // Heart rate calculation — split into all-day and nighttime (10 PM - 6 AM)
+  const hrReadings = (hrR.data || []) as HeartRateDataPoint[]
+  const hrValues = hrReadings.map((h) => h.bpm).filter((b: number) => typeof b === "number")
+
+  // Nighttime HR (10 PM - 6 AM) using dedicated calculator
+  const nightHR = calculateNightHR(hrReadings)
+
   let heartRate = null
   if (hrValues.length > 0) {
     const sorted = [...hrValues].sort((a, b) => a - b)
@@ -380,6 +405,9 @@ export async function fetchDailyMetrics(
       avg: Math.round(hrValues.reduce((a: number, b: number) => a + b, 0) / hrValues.length),
       min: Math.min(...hrValues),
       max: Math.max(...hrValues),
+      nightAvg: nightHR?.avg ?? 0,
+      nightMin: nightHR?.min ?? 0,
+      nightMax: nightHR?.max ?? 0,
     }
   }
 
@@ -496,5 +524,47 @@ export async function fetchMonthlyData(token: string, endDate: string): Promise<
   const results = await Promise.all(
     dates.map((d) => fetchDailyMetricsCached(token, d).then((r) => r.metrics))
   )
+  return results
+}
+
+// ── Endpoint tester (call from browser console for debugging) ────────
+export async function testOuraEndpoints(token: string): Promise<Record<string, any>> {
+  const endpoints = [
+    { name: "daily_sleep", url: `/daily_sleep?start_date=2025-07-04&end_date=2025-07-05` },
+    { name: "daily_readiness", url: `/daily_readiness?start_date=2025-07-04&end_date=2025-07-05` },
+    { name: "daily_activity", url: `/daily_activity?start_date=2025-07-04&end_date=2025-07-05` },
+    { name: "heartrate", url: `/heartrate?start_datetime=2025-07-04T00:00:00&end_datetime=2025-07-05T23:59:59` },
+    { name: "workout", url: `/workout?start_date=2025-07-04&end_date=2025-07-05` },
+    { name: "daily_spo2", url: `/daily_spo2?start_date=2025-07-04&end_date=2025-07-05` },
+    { name: "daily_stress", url: `/daily_stress?start_date=2025-07-04&end_date=2025-07-05` },
+    { name: "personal_info", url: `/personal_info` },
+  ]
+
+  const results: Record<string, any> = {}
+  for (const ep of endpoints) {
+    try {
+      const separator = ep.url.includes("?") ? "&" : "?"
+      const ouraUrl = `${OURA_BASE}${ep.url}${separator}access_token=${token}`
+      const proxyUrl = PRIMARY_PROXY + encodeURIComponent(ouraUrl)
+      const res = await fetchWithTimeout(proxyUrl, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "omit",
+      }, 15000)
+      if (res.ok) {
+        const data = await res.json()
+        results[ep.name] = {
+          status: "ok",
+          itemCount: data.data?.length ?? 0,
+          firstItem: data.data?.[0] ?? null,
+          raw: data,
+        }
+      } else {
+        results[ep.name] = { status: "error", code: res.status, text: res.statusText }
+      }
+    } catch (e: any) {
+      results[ep.name] = { status: "exception", message: e.message }
+    }
+  }
   return results
 }

@@ -625,50 +625,75 @@ export default function Dashboard() {
     const hr = metrics.heartRate
     const rd = metrics.readiness
 
-    const hrvValue = rd?.hrvBalance ?? 0
-    const hrvMs = hrvValue > 0 ? Math.round(hrvValue * 0.5 + 15) : 0
-    const hrvDesc = hrvValue < 60 ? "Low — stress reduction and deep breathing help" : hrvValue < 80 ? "Moderate" : "Good — recovery is on track"
+    // Card 1: HRV in ms (estimated from readiness hrvBalance score)
+    const hrvBalance = rd?.hrvBalance
+    const hrvMs = hrvBalance != null && hrvBalance > 0
+      ? Math.round(hrvBalance * 0.5 + 15)
+      : null
+    const hrvDesc = !hrvMs
+      ? "No HRV data available"
+      : hrvBalance! < 60
+        ? "Low — stress reduction and deep breathing help"
+        : hrvBalance! < 80
+          ? "Moderate"
+          : "Good — recovery is on track"
 
-    const restingHR = hr?.resting ?? rd?.restingHR ?? 0
-    const restingDesc = restingHR > 80 ? "Elevated — check for stress or dehydration" : restingHR >= 60 ? "Healthy range" : restingHR > 0 ? "Low — monitor if symptomatic" : "--"
+    // Card 2: Resting HR from readiness (primary) or heartRate data
+    const restingHR = rd?.restingHR ?? hr?.resting ?? null
+    const restingDesc = !restingHR
+      ? "No data available"
+      : restingHR > 80
+        ? "Elevated — check for stress or dehydration"
+        : restingHR >= 60
+          ? "Healthy range"
+          : "Low — monitor if symptomatic"
 
-    const nightHR = hr?.avg ?? 0
-    const nightLow = hr?.min ?? 0
-    const nightDesc = nightHR > 0
-      ? `Lowest: ${nightLow} bpm — Night HR linked to cognitive decline risk`
-      : "No data available"
+    // Card 3: Night HR (10 PM – 6 AM) from heartRate.nightAvg
+    const nightAvg = hr?.nightAvg
+    const nightMin = hr?.nightMin
+    const nightHRValue = nightAvg != null && nightAvg > 0 ? `${nightAvg}` : "--"
+    const nightDesc = nightAvg != null && nightAvg > 0
+      ? `Lowest: ${nightMin} bpm — Night HR linked to cognitive decline risk`
+      : "No nighttime data available"
 
-    const breathingRate = rd?.restingHR != null ? (rd.restingHR * 0.28).toFixed(1) : "--"
-    const breathingDesc = "Check for sleep apnea — breathing disturbances affect brain oxygen"
+    // Card 4: HRV Balance (readiness score 0-100)
+    const hrvBalanceValue = hrvBalance != null && hrvBalance > 0 ? `${hrvBalance}` : "--"
+    const hrvBalanceDesc = !hrvBalance
+      ? "No data available"
+      : hrvBalance < 60
+        ? "Below optimal — prioritize rest and recovery"
+        : hrvBalance < 80
+          ? "Moderate — adequate recovery"
+          : "Optimal — nervous system is well recovered"
 
     const cards = [
       {
         icon: Activity,
         label: "HRV",
-        value: hrvMs > 0 ? `${hrvMs}` : "--",
+        value: hrvMs != null ? `${hrvMs}` : "--",
         unit: "ms",
         description: hrvDesc,
       },
       {
         icon: HeartPulse,
         label: "Resting HR",
-        value: restingHR > 0 ? `${restingHR}` : "--",
+        value: restingHR != null ? `${restingHR}` : "--",
         unit: "bpm",
         description: restingDesc,
       },
       {
         icon: HeartPulse,
         label: "Night HR (avg)",
-        value: nightHR > 0 ? `${nightHR}` : "--",
+        value: nightHRValue,
         unit: "bpm",
         description: nightDesc,
       },
       {
-        icon: Wind,
-        label: "Breathing Rate",
-        value: breathingRate,
-        unit: "/min",
-        description: breathingDesc,
+        icon: Shield,
+        label: "HRV Balance",
+        value: hrvBalanceValue,
+        unit: "/ 100",
+        description: hrvBalanceDesc,
       },
     ]
 
@@ -699,35 +724,35 @@ export default function Dashboard() {
     if (!metrics?.activity) return null
     const a = metrics.activity
     const stepGoal = 8000
-    const stepPct = Math.min(100, Math.round((a.steps / stepGoal) * 100))
-    const inactiveMin = Math.max(0, 720 - Math.round(a.steps / 20))
+    const stepPct = a.steps > 0 ? Math.min(100, Math.round((a.steps / stepGoal) * 100)) : 0
+    const inactiveMin = a.steps > 0 ? Math.max(0, 720 - Math.round(a.steps / 20)) : 0
 
     const cards = [
       {
         icon: Footprints,
         label: "Steps",
-        value: a.steps != null ? a.steps.toLocaleString() : "--",
+        value: a.steps != null && a.steps > 0 ? a.steps.toLocaleString() : "--",
         unit: "",
-        description: `${stepPct}% of ${stepGoal.toLocaleString()} goal — Walking protects memory and supports brain blood flow`,
+        description: `${stepPct > 0 ? stepPct : "--"}% of ${stepGoal.toLocaleString()} goal — Walking protects memory and supports brain blood flow`,
       },
       {
         icon: Activity,
         label: "Activity Score",
-        value: a.score != null ? `${a.score}` : "--",
+        value: a.score != null && a.score > 0 ? `${a.score}` : "--",
         unit: "/ 100",
-        description: a.score >= 80 ? "Great activity level — movement supports cognitive health" : a.score >= 60 ? "Moderate — aim for more daily movement" : "Low — gentle walks help memory retention",
+        description: !a.score ? "No data available" : a.score >= 80 ? "Great activity level — movement supports cognitive health" : a.score >= 60 ? "Moderate — aim for more daily movement" : "Low — gentle walks help memory retention",
       },
       {
         icon: TrendingUp,
         label: "Active Calories",
-        value: a.activeCalories != null ? `${a.activeCalories}` : "--",
+        value: a.activeCalories != null && a.activeCalories > 0 ? `${a.activeCalories}` : "--",
         unit: "cal",
         description: "Calories burned during activity — fuels brain energy demands",
       },
       {
         icon: TrendingDown,
         label: "Inactive Time",
-        value: `${inactiveMin}`,
+        value: inactiveMin > 0 ? `${inactiveMin}` : "--",
         unit: "min",
         description: "Time sitting still — try to move every hour to protect brain circulation",
       },
@@ -760,20 +785,37 @@ export default function Dashboard() {
     if (!metrics?.spo2) return null
     const sp = metrics.spo2
 
+    // Show "--" when SpO2 average is 0 (endpoint failed) or missing
+    const spo2Avg = sp.average != null && sp.average > 0 ? sp.average : null
+
     const cards = [
       {
         icon: Droplets,
         label: "SpO2 Average",
-        value: sp.average != null ? `${sp.average}` : "--",
+        value: spo2Avg != null ? `${spo2Avg}` : "--",
         unit: "%",
-        description: sp.average >= 95 ? "Normal — good oxygenation supports brain function" : sp.average >= 92 ? "Mildly low — monitor for cognitive effects" : "Low — low oxygen affects brain function and may cause confusion",
+        description: !spo2Avg
+          ? "SpO2 data not available — ensure Oura Ring is properly positioned"
+          : spo2Avg >= 95
+            ? "Normal — good oxygenation supports brain function"
+            : spo2Avg >= 92
+              ? "Mildly low — monitor for cognitive effects"
+              : "Low — low oxygen affects brain function and may cause confusion",
       },
       {
         icon: Wind,
         label: "Breathing Disturbance",
-        value: sp.breathingDisturbanceIndex != null ? `${sp.breathingDisturbanceIndex}` : "--",
+        value: sp.breathingDisturbanceIndex != null && sp.breathingDisturbanceIndex > 0
+          ? `${sp.breathingDisturbanceIndex}`
+          : "--",
         unit: "BDI",
-        description: sp.breathingDisturbanceIndex > 15 ? "High — possible sleep apnea, linked to amyloid buildup" : sp.breathingDisturbanceIndex > 5 ? "Elevated — monitor trends" : "Normal breathing pattern",
+        description: !sp.breathingDisturbanceIndex
+          ? "No breathing disturbance data available"
+          : sp.breathingDisturbanceIndex > 15
+            ? "High — possible sleep apnea, linked to amyloid buildup"
+            : sp.breathingDisturbanceIndex > 5
+              ? "Elevated — monitor trends"
+              : "Normal breathing pattern",
       },
     ]
 
@@ -803,22 +845,40 @@ export default function Dashboard() {
   const renderStressSection = () => {
     if (!metrics?.stress) return null
     const st = metrics.stress
-    const recoveryHours = st.recoveryHigh > 0 ? (st.recoveryHigh / 3600).toFixed(1) : "--"
+
+    // Recovery is in seconds from Oura — convert to hours properly
+    const recoverySeconds = st.recoveryHigh
+    const recoveryHours = recoverySeconds != null && recoverySeconds > 0
+      ? (recoverySeconds / 3600).toFixed(1)
+      : null
+
+    // Stress score: use daySummary (0-100), NOT resilience.level string
+    const stressScore = st.daySummary != null && st.daySummary > 0 ? st.daySummary : null
 
     const cards = [
       {
         icon: Wind,
         label: "Stress Score",
-        value: st.daySummary != null ? `${st.daySummary}` : "--",
+        value: stressScore != null ? `${stressScore}` : "--",
         unit: "/ 100",
-        description: st.daySummary > 70 ? "High — chronic stress accelerates memory decline via cortisol damage" : st.daySummary > 40 ? "Moderate — relaxation practices help protect the hippocampus" : "Low — good stress management supports long-term memory health",
+        description: !stressScore
+          ? "No stress data available"
+          : stressScore > 70
+            ? "High — chronic stress accelerates memory decline via cortisol damage"
+            : stressScore > 40
+              ? "Moderate — relaxation practices help protect the hippocampus"
+              : "Low — good stress management supports long-term memory health",
       },
       {
         icon: Shield,
         label: "Recovery",
-        value: recoveryHours,
+        value: recoveryHours != null ? `${recoveryHours}` : "--",
         unit: "hrs",
-        description: st.recoveryHigh > 2 * 3600 ? "Good recovery — rest repairs neural pathways" : "Short recovery — prioritize rest to protect cognitive function",
+        description: !recoverySeconds
+          ? "No recovery data available"
+          : recoverySeconds > 2 * 3600
+            ? "Good recovery — rest repairs neural pathways"
+            : "Short recovery — prioritize rest to protect cognitive function",
       },
     ]
 

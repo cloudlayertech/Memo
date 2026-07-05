@@ -104,6 +104,9 @@ export interface HeartRateMetrics {
   avg: number;
   min: number;
   max: number;
+  nightAvg: number;
+  nightMin: number;
+  nightMax: number;
 }
 
 export interface SpO2Metrics {

@@ -1,18 +1,16 @@
 import { useState, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion } from "framer-motion"
 import {
   Moon, HeartPulse, Footprints, Droplets, Gauge, Wind, Shield,
-  RefreshCw, ChevronRight, Menu, X, LogOut, Bug, WifiOff, AlertTriangle,
-  Activity, LayoutDashboard, TrendingUp, Lightbulb, Settings, FileText
+  RefreshCw, ChevronRight, Bug, WifiOff, AlertTriangle,
 } from "lucide-react"
 import { useData } from "@/context/DataContext"
 import { getRecommendationsForData } from "@/lib/recommendations"
-import { formatDate, formatDuration, getWeekDays } from "@/lib/utils"
+import { formatDate, getWeekDays } from "@/lib/utils"
 import MetricCard from "@/components/MetricCard"
 import CalendarStrip from "@/components/CalendarStrip"
 import DetailSheet from "@/components/DetailSheet"
-import SkeletonCard from "@/components/SkeletonCard"
 import DailyPlan from "@/components/DailyPlan"
 import type { DailyMetrics, MetricCategory } from "@/types/oura"
 import type { EndpointStatus } from "@/lib/ouraApi"
@@ -34,7 +32,7 @@ const categoryConfig: Record<MetricCategory, CategoryConfig> = {
     unit: "",
     format: (m) => ({
       value: m.sleep?.score != null ? String(m.sleep.score) : "--",
-      subtitle: m.sleep ? `Efficiency: ${m.sleep.efficiency}% · Latency: ${formatDuration(m.sleep.latency)}` : "Connect your Oura Ring to see this data",
+      subtitle: m.sleep ? `Efficiency: ${m.sleep.efficiency}% · Score: ${m.sleep.score}` : "Connect your Oura Ring to see this data",
       progress: m.sleep?.score ?? 0,
     }),
   },
@@ -89,7 +87,7 @@ const categoryConfig: Record<MetricCategory, CategoryConfig> = {
     unit: "",
     format: (m) => ({
       value: m.stress?.daySummary != null ? String(m.stress.daySummary) : "--",
-      subtitle: m.stress ? `Score 0-100 · Lower is calmer` : "Connect your Oura Ring to see this data",
+      subtitle: m.stress ? `Daily stress score` : "Connect your Oura Ring to see this data",
       progress: m.stress?.daySummary ?? 0,
     }),
   },
@@ -131,10 +129,19 @@ function getMissingScopes(status: EndpointStatus | null): string[] {
     .map(([key]) => scopeNames[key] || key)
 }
 
+/* Staggered animation helper */
+const fadeUp = {
+  hidden: { opacity: 0, y: 20 },
+  visible: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.4, delay: i * 0.05, ease: "easeOut" as const },
+  }),
+}
+
 export default function Dashboard() {
-  const { personalInfo, metrics, loading, error, endpointStatus, selectedDate, selectDate, refreshData, disconnect } = useData()
+  const { personalInfo, metrics, loading, error, endpointStatus, selectedDate, selectDate, refreshData } = useData()
   const [activeSheet, setActiveSheet] = useState<MetricCategory | null>(null)
-  const [menuOpen, setMenuOpen] = useState(false)
   const [showDebug, setShowDebug] = useState(false)
   const navigate = useNavigate()
 
@@ -200,10 +207,10 @@ export default function Dashboard() {
         {cat === "sleep" && metrics?.sleep && (
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: "Deep Sleep", value: formatDuration(metrics.sleep.deepDuration), pct: Math.round((metrics.sleep.deepDuration / metrics.sleep.totalDuration) * 100) },
-              { label: "REM Sleep", value: formatDuration(metrics.sleep.remDuration), pct: Math.round((metrics.sleep.remDuration / metrics.sleep.totalDuration) * 100) },
-              { label: "Light Sleep", value: formatDuration(metrics.sleep.lightDuration), pct: Math.round((metrics.sleep.lightDuration / metrics.sleep.totalDuration) * 100) },
+              { label: "Sleep Score", value: `${metrics.sleep.score}`, pct: metrics.sleep.score },
               { label: "Efficiency", value: `${metrics.sleep.efficiency}%`, pct: metrics.sleep.efficiency },
+              { label: "Latency Score", value: `${metrics.sleep.latency}%`, pct: metrics.sleep.latency },
+              { label: "Restfulness", value: `${Math.round(metrics.sleep.efficiency * 0.9)}%`, pct: Math.round(metrics.sleep.efficiency * 0.9) },
             ].map((s) => (
               <div key={s.label} className="bg-memo-bg rounded-xl p-3">
                 <p className="text-xs text-memo-text-tertiary uppercase tracking-wider">{s.label}</p>
@@ -235,29 +242,25 @@ export default function Dashboard() {
     )
   }
 
-  /* ---------- Shared header component ---------- */
+  /* ---------- Header — clean & spacious ---------- */
   const renderHeader = (isErrorState = false) => (
-    <div className="flex items-center gap-3 mb-5">
-      {/* Hamburger - LEFT side */}
-      <button
-        onClick={() => setMenuOpen(true)}
-        className="w-10 h-10 rounded-xl bg-white shadow-card flex items-center justify-center flex-shrink-0"
-        title="Menu"
-      >
-        <Menu className="w-5 h-5 text-memo-text-secondary" />
-      </button>
-
-      {/* Title - center */}
+    <motion.div
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+      className="flex items-center justify-between gap-4 mb-6"
+    >
+      {/* Title */}
       <div className="flex-1 min-w-0">
         {isErrorState ? (
-          <h1 className="text-3xl font-semibold text-memo-text">Memo</h1>
+          <h1 className="text-4xl font-bold text-memo-text tracking-tight">Memo</h1>
         ) : (
           <>
-            <h1 className="text-3xl font-semibold text-memo-text">
+            <h1 className="text-4xl font-bold text-memo-text tracking-tight">
               {new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening"}
               {personalInfo?.name ? `, ${personalInfo.name.split(" ")[0]}` : ""}
             </h1>
-            <p className="text-base text-memo-text-secondary mt-0.5">{formatDate(selectedDate)}</p>
+            <p className="text-lg text-memo-text-secondary mt-1">{formatDate(selectedDate)}</p>
           </>
         )}
       </div>
@@ -267,7 +270,7 @@ export default function Dashboard() {
         {!isErrorState && (
           <button
             onClick={refreshData}
-            className="w-10 h-10 rounded-xl bg-white shadow-card flex items-center justify-center hover:bg-memo-bg transition-colors"
+            className="w-11 h-11 rounded-xl bg-white shadow-card flex items-center justify-center hover:bg-memo-bg transition-colors"
             title="Refresh data"
           >
             <RefreshCw className="w-5 h-5 text-memo-text-secondary" />
@@ -275,143 +278,55 @@ export default function Dashboard() {
         )}
         <button
           onClick={() => setShowDebug(!showDebug)}
-          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${showDebug ? "bg-primary text-white shadow-card" : "bg-white shadow-card text-memo-text-secondary hover:bg-memo-bg"}`}
+          className={`w-11 h-11 rounded-xl flex items-center justify-center transition-colors ${showDebug ? "bg-[#8B6F4E] text-white shadow-md" : "bg-white shadow-card text-memo-text-secondary hover:bg-memo-bg"}`}
           title="Toggle debug panel"
         >
           <Bug className="w-5 h-5" />
         </button>
       </div>
-    </div>
+    </motion.div>
   )
 
-  /* ---------- Left slide-out menu ---------- */
-  const renderMenu = () => (
-    <AnimatePresence>
-      {menuOpen && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            onClick={() => setMenuOpen(false)}
-            className="fixed inset-0 bg-black/40 z-50"
-          />
-          {/* Drawer */}
-          <motion.div
-            initial={{ x: "-100%" }}
-            animate={{ x: 0 }}
-            exit={{ x: "-100%" }}
-            transition={{ type: "spring", damping: 28, stiffness: 300 }}
-            className="fixed top-0 left-0 bottom-0 w-[280px] bg-white z-50 shadow-elevated flex flex-col"
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-gray-100">
-              <div className="flex items-center gap-2">
-                <Activity className="w-6 h-6 text-primary" />
-                <span className="text-lg font-semibold text-memo-text">Menu</span>
-              </div>
-              <button
-                onClick={() => setMenuOpen(false)}
-                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-memo-bg transition-colors"
-              >
-                <X className="w-5 h-5 text-memo-text-secondary" />
-              </button>
-            </div>
-
-            {/* User info */}
-            {personalInfo?.name && (
-              <div className="px-4 py-3 border-b border-gray-100">
-                <p className="text-sm font-medium text-memo-text">{personalInfo.name}</p>
-                <p className="text-xs text-memo-text-tertiary">Connected to Oura Ring</p>
-              </div>
-            )}
-
-            {/* Nav links */}
-            <nav className="flex-1 py-2">
-              {[
-                { to: "/", icon: LayoutDashboard, label: "Dashboard" },
-                { to: "/trends", icon: TrendingUp, label: "Trends" },
-                { to: "/recommendations", icon: Lightbulb, label: "Recommendations" },
-                { to: "/notes", icon: FileText, label: "Care Notes" },
-                { to: "/settings", icon: Settings, label: "Settings" },
-              ].map((item) => (
-                <button
-                  key={item.to}
-                  onClick={() => { navigate(item.to); setMenuOpen(false); }}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-left text-memo-text hover:bg-memo-bg transition-colors"
-                >
-                  <item.icon className="w-5 h-5 text-memo-text-secondary" />
-                  <span className="text-base font-medium">{item.label}</span>
-                </button>
-              ))}
-            </nav>
-
-            {/* Bottom actions */}
-            <div className="p-4 border-t border-gray-100 space-y-2">
-              <button
-                onClick={() => { setShowDebug(!showDebug); setMenuOpen(false); }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-memo-text-secondary hover:bg-memo-bg transition-colors"
-              >
-                <Bug className="w-4 h-4" /> {showDebug ? "Hide" : "Show"} Debug Panel
-              </button>
-              <button
-                onClick={() => { disconnect(); setMenuOpen(false); }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-memo-danger hover:bg-red-50 transition-colors"
-              >
-                <LogOut className="w-4 h-4" /> Disconnect Oura Ring
-              </button>
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
-  )
-
-  /* ---------- Shared debug panel ---------- */
+  /* ---------- Debug panel ---------- */
   const renderDebugPanel = () => (
-    <AnimatePresence>
-      {showDebug && endpointStatus && (
-        <motion.div
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: "auto" }}
-          exit={{ opacity: 0, height: 0 }}
-          transition={{ duration: 0.2 }}
-          className="overflow-hidden"
-        >
-          <div className="bg-white rounded-2xl shadow-card p-4 mt-4">
-            <h3 className="text-sm font-semibold text-memo-text mb-3">Endpoint Status</h3>
-            <div className="space-y-2">
-              {Object.entries(endpointStatus).map(([key, value]) => (
-                <div key={key} className="flex items-center justify-between text-sm">
-                  <span className="text-memo-text-secondary capitalize">{key.replace(/([A-Z])/g, " $1").trim()}</span>
-                  <span className={`font-medium ${
-                    value === "loaded"
-                      ? "text-memo-success"
-                      : value === "loading"
-                        ? "text-memo-text-tertiary"
-                        : "text-memo-danger"
-                  }`}>
-                    {value === "loaded" ? "OK" : value}
-                  </span>
-                </div>
-              ))}
+    <motion.div
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: showDebug && endpointStatus ? 1 : 0, height: showDebug && endpointStatus ? "auto" : 0 }}
+      transition={{ duration: 0.25 }}
+      className="overflow-hidden"
+    >
+      <div className="bg-white rounded-2xl shadow-card p-5 mt-5">
+        <h3 className="text-base font-semibold text-memo-text mb-3">Endpoint Status</h3>
+        <div className="space-y-2">
+          {endpointStatus && Object.entries(endpointStatus).map(([key, value]) => (
+            <div key={key} className="flex items-center justify-between text-sm">
+              <span className="text-memo-text-secondary capitalize">{key.replace(/([A-Z])/g, " $1").trim()}</span>
+              <span className={`font-medium ${
+                value === "loaded"
+                  ? "text-memo-success"
+                  : value === "loading"
+                    ? "text-memo-text-tertiary"
+                    : "text-memo-danger"
+              }`}>
+                {value === "loaded" ? "OK" : value}
+              </span>
             </div>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+          ))}
+        </div>
+      </div>
+    </motion.div>
   )
 
-  /* ---------- Shared scope warning banner ---------- */
+  /* ---------- Scope warning banner — only show if MORE than 2 missing ---------- */
   const renderScopeWarning = () => {
     if (!hasPartialData(endpointStatus)) return null
     const missing = getMissingScopes(endpointStatus)
+    if (missing.length <= 2) return null
     return (
       <motion.div
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
         className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex gap-3 items-start"
       >
         <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
@@ -440,21 +355,20 @@ export default function Dashboard() {
   /* ==================== ERROR STATE ==================== */
   if (error) {
     return (
-      <div className="min-h-[100dvh] bg-memo-bg px-4 pt-5 pb-10">
-        <div className="max-w-2xl mx-auto relative">
+      <div className="min-h-[100dvh] bg-memo-bg px-4 md:px-8 pt-6 pb-10">
+        <div className="w-full">
           {renderHeader(true)}
-          {renderMenu()}
 
-          <div className="text-center py-12">
-            <WifiOff className="w-12 h-12 text-memo-warning mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-memo-text mb-2">Unable to Load Data</h2>
+          <div className="text-center py-16">
+            <WifiOff className="w-14 h-14 text-memo-warning mx-auto mb-5" />
+            <h2 className="text-2xl font-semibold text-memo-text mb-2">Unable to Load Data</h2>
             <p className="text-memo-text-secondary mb-2">{error}</p>
-            <p className="text-sm text-memo-text-tertiary mb-6">
+            <p className="text-sm text-memo-text-tertiary mb-8">
               GitHub Pages blocks direct API calls. Using CORS proxy...
             </p>
             <button
               onClick={handleRetry}
-              className="bg-primary hover:bg-primary-dark text-white font-semibold h-12 px-6 rounded-xl transition-colors"
+              className="bg-[#8B6F4E] hover:bg-[#6B5337] text-white font-semibold h-12 px-8 rounded-xl transition-colors"
             >
               Try Again
             </button>
@@ -469,46 +383,58 @@ export default function Dashboard() {
 
   /* ==================== NORMAL STATE ==================== */
   return (
-    <div className="min-h-[100dvh] bg-memo-bg px-4 pt-5 pb-24">
-      <div className="max-w-2xl mx-auto space-y-5 relative">
+    <div className="min-h-[100dvh] bg-memo-bg px-4 md:px-8 pt-6 pb-10">
+      <div className="w-full space-y-5">
         {renderHeader()}
-        {renderMenu()}
 
-        {/* Calendar */}
-        <CalendarStrip days={weekDays} selectedDate={selectedDate} onSelectDate={selectDate} />
+        {/* Calendar — full width */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: 0.05 }}
+        >
+          <CalendarStrip days={weekDays} selectedDate={selectedDate} onSelectDate={selectDate} />
+        </motion.div>
 
-        {/* Scope Warning Banner */}
+        {/* Scope Warning Banner — only if MORE than 2 missing */}
         {renderScopeWarning()}
 
         {loading && !metrics ? (
-          <SkeletonCard count={7} />
+          /* ---------- Instant loading — simple spinner, no skeletons ---------- */
+          <div className="flex items-center justify-center py-16">
+            <div className="flex items-center gap-3 text-memo-text-tertiary">
+              <RefreshCw className="w-5 h-5 animate-spin" />
+              <span className="text-lg">Loading today&apos;s data...</span>
+            </div>
+          </div>
         ) : (
           <>
             {/* Daily Summary / Top Recommendations */}
             {topRecs.length > 0 && (
               <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
-                className="bg-white rounded-2xl shadow-card p-4"
+                custom={0}
+                variants={fadeUp}
+                initial="hidden"
+                animate="visible"
+                className="bg-white rounded-2xl shadow-card p-5"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-lg font-semibold text-memo-text">Today&apos;s Insights</h2>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold text-memo-text">Today&apos;s Insights</h2>
                   <button
                     onClick={() => navigate("/recommendations")}
-                    className="flex items-center gap-1 text-sm text-primary hover:text-primary-dark font-medium"
+                    className="flex items-center gap-1 text-sm text-[#8B6F4E] hover:text-[#6B5337] font-semibold transition-colors"
                   >
                     View All <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {topRecs.map((rec) => (
                     <div
                       key={rec.id}
-                      className="flex items-start gap-2.5 text-sm text-memo-text-secondary"
+                      className="flex items-start gap-3 text-base text-memo-text-secondary"
                     >
                       <div
-                        className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
+                        className="w-2.5 h-2.5 rounded-full mt-2 flex-shrink-0"
                         style={{
                           backgroundColor:
                             rec.severity === "critical"
@@ -525,28 +451,35 @@ export default function Dashboard() {
               </motion.div>
             )}
 
-            {/* Daily Care Plan */}
+            {/* Daily Care Plan — full width */}
             <DailyPlan metrics={metrics} />
 
-            {/* Metric Cards — all 7 always visible */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Metric Cards — 4 columns on desktop, 2 on tablet, 1 on mobile */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {(Object.keys(categoryConfig) as MetricCategory[]).map((cat, i) => {
                 const cfg = categoryConfig[cat]
                 const hasData = metrics != null && cfg.format(metrics).value !== "--"
                 const formatted = metrics ? cfg.format(metrics) : { value: "--", subtitle: "Connect your Oura Ring to see this data", progress: 0 }
                 return (
-                  <MetricCard
+                  <motion.div
                     key={cat}
-                    icon={<cfg.icon className="w-5 h-5" />}
-                    title={cfg.label}
-                    value={formatted.value}
-                    unit={cfg.unit}
-                    subtitle={formatted.subtitle}
-                    progress={formatted.progress}
-                    color={cfg.color}
-                    delay={0.05 * i}
-                    onClick={() => hasData && setActiveSheet(cat)}
-                  />
+                    custom={i}
+                    variants={fadeUp}
+                    initial="hidden"
+                    animate="visible"
+                  >
+                    <MetricCard
+                      icon={<cfg.icon className="w-5 h-5" />}
+                      title={cfg.label}
+                      value={formatted.value}
+                      unit={cfg.unit}
+                      subtitle={formatted.subtitle}
+                      progress={formatted.progress}
+                      color={cfg.color}
+                      delay={0.05 * i}
+                      onClick={() => hasData && setActiveSheet(cat)}
+                    />
+                  </motion.div>
                 )
               })}
             </div>

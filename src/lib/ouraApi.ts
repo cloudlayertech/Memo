@@ -160,43 +160,44 @@ export interface EndpointStatus {
   workout: string; spo2: string; stress: string
 }
 
-// Oura v2 API returns data under "contributors" object
-// Sleep: contributors.total_sleep (seconds), .deep_sleep, .rem_sleep, .light_sleep, .efficiency, .latency
+// Oura v2 API "contributors" fields are SCORES (0-100), NOT raw seconds.
+// The "score" field is also 0-100. Actual durations are NOT available in v2 daily_sleep.
 function extractSleep(item: any) {
   const c = item.contributors || {}
   return {
     day: item.day || "",
     score: item.score ?? 0,
-    totalDuration: c.total_sleep ?? 0,
-    deepDuration: c.deep_sleep ?? 0,
-    remDuration: c.rem_sleep ?? 0,
-    lightDuration: c.light_sleep ?? 0,
-    latency: c.latency ?? 0,
-    efficiency: c.efficiency ?? 0,
+    totalDuration: 0, // v2 daily_sleep does not provide raw duration seconds
+    deepDuration: 0,
+    remDuration: 0,
+    lightDuration: 0,
+    latency: c.latency ?? 0, // latency SCORE 0-100 (not seconds)
+    efficiency: c.efficiency ?? 0, // efficiency SCORE 0-100
   }
 }
 
-// Readiness: contributors.hrv_balance, .resting_heart_rate, .body_temperature, etc.
+// Readiness: Use top-level fields for actual values (resting_heart_rate in bpm,
+// temperature_deviation in degrees). hrv_balance from contributors is a SCORE 0-100.
 function extractReadiness(item: any) {
-  const c = item.contributors || {}
   return {
     day: item.day || "",
     score: item.score ?? 0,
-    temperatureDeviation: c.body_temperature ?? 0,
-    restingHR: c.resting_heart_rate ?? 0,
-    hrvBalance: c.hrv_balance ?? 0,
+    temperatureDeviation: item.temperature_deviation ?? 0,
+    restingHR: item.resting_heart_rate ?? 0,
+    hrvBalance: item.contributors?.hrv_balance ?? 0,
   }
 }
 
-// Activity: direct fields on item
+// Activity: v2 daily_activity returns actual values (steps, calories, distance)
+// at the top level. high_intensity_minutes is not directly available.
 function extractActivity(item: any) {
   return {
     day: item.day || "",
     score: item.score ?? 0,
     steps: item.steps ?? 0,
-    activeCalories: item.active_calories ?? item.calories_active ?? 0,
+    activeCalories: item.active_calories ?? 0,
     totalCalories: item.total_calories ?? 0,
-    highIntensityMin: item.high_intensity_minutes ?? 0,
+    highIntensityMin: 0,
     distance: item.equivalent_walking_distance ?? 0,
   }
 }

@@ -1,10 +1,8 @@
 import { useState, useMemo } from "react"
 import { motion } from "framer-motion"
-import { Moon, HeartPulse, Footprints, Gauge, Droplets, Wind, Shield } from "lucide-react"
+import { Moon, HeartPulse, Footprints, Gauge, Droplets, Wind, Shield, RefreshCw } from "lucide-react"
 import { useData } from "@/context/DataContext"
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts"
-import SkeletonCard from "@/components/SkeletonCard"
-import BackButton from "@/components/BackButton"
 import { fetchWeeklyData, fetchMonthlyData } from "@/lib/ouraApi"
 import type { DailyMetrics } from "@/types/oura"
 
@@ -60,6 +58,15 @@ const chartConfigs = [
     accessor: (m: DailyMetrics) => m.resilience?.score ?? 0,
   },
 ]
+
+const fadeUp = {
+  hidden: { opacity: 0, y: 20 },
+  visible: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.4, delay: i * 0.06, ease: "easeOut" as const },
+  }),
+}
 
 export default function Trends() {
   const { token, selectedDate } = useData()
@@ -119,16 +126,25 @@ export default function Trends() {
   }, [chartData, trendData])
 
   return (
-    <div className="min-h-[100dvh] bg-memo-bg px-4 pt-5 pb-10">
-      <div className="max-w-2xl mx-auto space-y-5">
-        <BackButton />
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <h1 className="text-3xl font-semibold text-memo-text mb-1">Trends</h1>
-          <p className="text-base text-memo-text-secondary">See how your metrics change over time</p>
+    <div className="min-h-[100dvh] bg-memo-bg px-4 md:px-8 pt-6 pb-10">
+      <div className="w-full space-y-5">
+        {/* Header */}
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+        >
+          <h1 className="text-4xl font-bold text-memo-text tracking-tight">Trends</h1>
+          <p className="text-lg text-memo-text-secondary mt-1">See how your metrics change over time</p>
         </motion.div>
 
         {/* Time Range Selector */}
-        <div className="flex bg-white rounded-xl p-1 shadow-card">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+          className="flex bg-white rounded-2xl p-1.5 shadow-card max-w-sm"
+        >
           {[
             { value: 7 as const, label: "This Week" },
             { value: 30 as const, label: "This Month" },
@@ -136,26 +152,27 @@ export default function Trends() {
             <button
               key={r.value}
               onClick={() => setRange(r.value)}
-              className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
-                range === r.value ? "bg-primary text-white" : "text-memo-text-secondary hover:bg-memo-bg"
+              className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                range === r.value ? "bg-[#8B6F4E] text-white shadow-sm" : "text-memo-text-secondary hover:bg-memo-bg"
               }`}
             >
               {r.label}
             </button>
           ))}
-        </div>
+        </motion.div>
 
         {/* Averages Summary */}
         {averages && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-2xl shadow-card p-4"
+            transition={{ delay: 0.1 }}
+            className="bg-white rounded-2xl shadow-card p-5"
           >
-            <h2 className="text-sm font-semibold text-memo-text-secondary uppercase tracking-wider mb-3">
+            <h2 className="text-sm font-semibold text-memo-text-secondary uppercase tracking-wider mb-4">
               Averages
             </h2>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-4">
               {[
                 { label: "Sleep", value: averages.sleep, color: "#7B9EA8" },
                 { label: "Readiness", value: averages.readiness, color: "#9B8BB5" },
@@ -165,8 +182,8 @@ export default function Trends() {
                 { label: "Resilience", value: averages.resilience, color: "#8BB5A0" },
               ].map((item) => (
                 <div key={item.label} className="text-center">
-                  <p className="text-xs text-memo-text-tertiary uppercase tracking-wider">{item.label}</p>
-                  <p className="text-lg font-semibold text-memo-text" style={{ color: item.color }}>
+                  <p className="text-xs text-memo-text-tertiary uppercase tracking-wider mb-1">{item.label}</p>
+                  <p className="text-xl font-semibold text-memo-text" style={{ color: item.color }}>
                     {item.value}
                   </p>
                 </div>
@@ -175,10 +192,16 @@ export default function Trends() {
           </motion.div>
         )}
 
+        {/* Loading or Charts */}
         {loading ? (
-          <SkeletonCard count={3} />
+          <div className="flex items-center justify-center py-16">
+            <div className="flex items-center gap-3 text-memo-text-tertiary">
+              <RefreshCw className="w-5 h-5 animate-spin" />
+              <span className="text-lg">Loading trends...</span>
+            </div>
+          </div>
         ) : (
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {chartConfigs.map((cfg, i) => {
               const Icon = cfg.icon
               const data = chartData.filter((d) => d[cfg.key] > 0)
@@ -200,36 +223,34 @@ export default function Trends() {
               return (
                 <motion.div
                   key={cfg.key}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.08 }}
-                  className="bg-white rounded-2xl shadow-card p-4"
+                  custom={i}
+                  variants={fadeUp}
+                  initial="hidden"
+                  animate="visible"
+                  className="bg-white rounded-2xl shadow-card p-5"
                 >
-                  <div className="flex items-center gap-2 mb-3">
+                  <div className="flex items-center gap-2.5 mb-4">
                     <Icon className="w-5 h-5" style={{ color: cfg.color }} />
                     <h3 className="text-base font-semibold text-memo-text">{cfg.label}</h3>
                   </div>
-                  <div className="h-[180px]">
+                  <div className="h-[200px]">
                     {data.length > 0 ? (
                       <ResponsiveContainer width="100%" height="100%">
                         <ChartComponent data={data}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#f0ece6" />
                           <XAxis
                             dataKey="date"
-                            tick={{ fontSize: 10, fill: "#9B9590" }}
+                            tick={{ fontSize: 11, fill: "#9B9590" }}
                             tickLine={false}
                             axisLine={false}
                           />
-                          <YAxis
-                            hide
-                            domain={["auto", "auto"]}
-                          />
+                          <YAxis hide domain={["auto", "auto"]} />
                           <Tooltip
                             contentStyle={{
-                              borderRadius: 10,
+                              borderRadius: 12,
                               border: "none",
                               boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                              fontSize: 12,
+                              fontSize: 13,
                             }}
                             formatter={(value: number) =>
                               cfg.format ? [cfg.format(value), cfg.label] : [value, cfg.label]

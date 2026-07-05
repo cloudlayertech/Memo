@@ -20,31 +20,31 @@ export default function Connect() {
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
-        className="text-center max-w-sm w-full"
+        className="text-center max-w-md w-full"
       >
-        <div className="w-20 h-20 rounded-3xl bg-primary flex items-center justify-center mx-auto mb-6 shadow-lg">
-          <Activity className="w-10 h-10 text-white" />
+        <div className="w-24 h-24 rounded-3xl bg-[#8B6F4E] flex items-center justify-center mx-auto mb-8 shadow-lg">
+          <Activity className="w-12 h-12 text-white" />
         </div>
 
-        <h1 className="text-4xl font-semibold text-memo-text mb-2">Welcome to Memo</h1>
-        <p className="text-lg text-memo-text-secondary mb-10 leading-relaxed">
+        <h1 className="text-5xl font-bold text-memo-text mb-3 tracking-tight">Welcome to Memo</h1>
+        <p className="text-xl text-memo-text-secondary mb-12 leading-relaxed">
           Your daily health companion. Connect your Oura Ring to see personalized insights for a
           healthier mind.
         </p>
 
-        <div className="space-y-3 mb-10 text-left">
+        <div className="space-y-3 mb-12 text-left">
           {features.map((f, i) => (
             <motion.div
               key={i}
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.3 + i * 0.1 }}
-              className="flex items-center gap-3 bg-white rounded-xl p-3.5 shadow-card"
+              className="flex items-center gap-4 bg-white rounded-2xl p-4 shadow-card"
             >
-              <div className="w-9 h-9 rounded-lg bg-memo-primary-light flex items-center justify-center flex-shrink-0">
-                <f.icon className="w-5 h-5 text-primary" />
+              <div className="w-10 h-10 rounded-xl bg-[#F5EDE3] flex items-center justify-center flex-shrink-0">
+                <f.icon className="w-5 h-5 text-[#8B6F4E]" />
               </div>
-              <span className="text-sm font-medium text-memo-text">{f.text}</span>
+              <span className="text-base font-medium text-memo-text">{f.text}</span>
             </motion.div>
           ))}
         </div>
@@ -56,13 +56,13 @@ export default function Connect() {
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.97 }}
           onClick={handleConnect}
-          className="w-full bg-primary hover:bg-primary-dark text-white font-semibold text-lg h-14 rounded-xl transition-colors shadow-lg"
+          className="w-full bg-[#8B6F4E] hover:bg-[#6B5337] text-white font-bold text-lg h-14 rounded-xl transition-colors shadow-lg"
         >
           Connect Oura Ring
         </motion.button>
 
-        <p className="text-xs text-memo-text-tertiary mt-4">
-          You'll be redirected to Oura to authorize access. Your data is never shared.
+        <p className="text-sm text-memo-text-tertiary mt-5">
+          You&apos;ll be redirected to Oura to authorize access. Your data is never shared.
         </p>
       </motion.div>
     </div>

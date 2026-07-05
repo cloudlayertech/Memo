@@ -203,28 +203,28 @@ export default function DailyPlan({ metrics }: DailyPlanProps) {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
+      initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.15 }}
-      className="bg-white rounded-2xl shadow-card p-4"
+      transition={{ duration: 0.4, delay: 0.12 }}
+      className="bg-white rounded-2xl shadow-card p-5 md:p-6"
     >
-      <h2 className="text-lg font-semibold text-memo-text mb-3">Today&apos;s Care Plan</h2>
-      <div className="space-y-4">
+      <h2 className="text-xl font-semibold text-memo-text mb-4">Today&apos;s Care Plan</h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         {sections.map((section) => {
           const Icon = section.icon
           return (
-            <div key={section.timeLabel} className="space-y-2">
-              <div className="flex items-center gap-2">
-                <div className={`w-8 h-8 rounded-lg ${section.bgColor} flex items-center justify-center`}>
-                  <Icon className="w-4 h-4" style={{ color: section.iconColor }} />
+            <div key={section.timeLabel} className="space-y-3">
+              <div className="flex items-center gap-2.5">
+                <div className={`w-10 h-10 rounded-xl ${section.bgColor} flex items-center justify-center`}>
+                  <Icon className="w-5 h-5" style={{ color: section.iconColor }} />
                 </div>
-                <h3 className="text-base font-semibold text-memo-text">{section.timeLabel}</h3>
+                <h3 className="text-lg font-semibold text-memo-text">{section.timeLabel}</h3>
               </div>
-              <ul className="space-y-1.5 pl-10">
+              <ul className="space-y-2 pl-1">
                 {section.tasks.map((task, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-memo-text-secondary">
+                  <li key={i} className="flex items-start gap-3 text-base text-memo-text-secondary leading-relaxed">
                     <span
-                      className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0"
+                      className="w-2 h-2 rounded-full mt-2 flex-shrink-0"
                       style={{ backgroundColor: section.iconColor }}
                     />
                     <span>{task}</span>

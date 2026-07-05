@@ -1,0 +1,2 @@
+/api/oura/*  https://api.ouraring.com/v2/:splat  200
+/*  /index.html  200
